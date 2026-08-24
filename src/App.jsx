@@ -14,10 +14,9 @@ function App() {
   const [errorMsg, setErrorMsg] = useState("");
   const [debugHex, setDebugHex] = useState("");
 
-  // Data State
-  const [emgData, setEmgData] = useState(Array.from({ length: 50 }, (_, i) => ({ time: i, value: 0 })));
+  const [emgData, setEmgData] = useState(Array.from({ length: 200 }, (_, i) => ({ time: i, value: 0 })));
   const [currentValue, setCurrentValue] = useState(0);
-  const timeRef = useRef(50);
+  const timeRef = useRef(200);
   const bufferRef = useRef("");
 
   // Default ESP32 UUIDs (can be changed later by user)
@@ -171,8 +170,8 @@ function App() {
         // Batch update chart data
         setEmgData(prevData => {
           const combined = [...prevData, ...newPoints];
-          // Keep only the last 50 points so it doesn't freeze the browser
-          return combined.slice(-50);
+          // Increase window to 200 points for better high-frequency visibility
+          return combined.slice(-200);
         });
       }
     } catch (e) {
