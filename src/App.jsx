@@ -140,12 +140,15 @@ function App() {
       const decoder = new TextDecoder('utf-8');
       const text = decoder.decode(value).trim();
       
-      if (text !== "" && !isNaN(text)) {
+      if (text !== "" && !isNaN(text) && value.byteLength !== 4) {
         sensorValue = parseFloat(text);
       } else {
-        // 2. Fallback to raw bytes (int16 or uint8) if it's not a valid string
-        if (value.byteLength >= 2) {
-          sensorValue = value.getInt16(0, true); // true = little-endian (ESP32 default)
+        // 2. Fallback to raw bytes based on length
+        if (value.byteLength === 4) {
+          // Sine waves are often sent as 4-byte Floats
+          sensorValue = value.getFloat32(0, true); 
+        } else if (value.byteLength === 2) {
+          sensorValue = value.getInt16(0, true); 
         } else if (value.byteLength === 1) {
           sensorValue = value.getUint8(0);
         }
