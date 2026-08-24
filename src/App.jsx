@@ -1,46 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Activity, Power, Settings, ChevronRight, Play, Square, Bluetooth } from 'lucide-react';
+import { Activity, Power, Settings, ChevronRight, Play, Square, Bluetooth, BluetoothConnected, AlertTriangle } from 'lucide-react';
 import './index.css';
-
-// Custom Hook to generate mock EMG data
-const useMockEMGData = (isRecording) => {
-  const [data, setData] = useState(Array.from({ length: 50 }, (_, i) => ({ time: i, value: 0 })));
-  const [currentValue, setCurrentValue] = useState(0);
-  const timeRef = useRef(50);
-
-  useEffect(() => {
-    let interval;
-    if (isRecording) {
-      interval = setInterval(() => {
-        // Generate a random bursty signal resembling EMG
-        const baseNoise = Math.random() * 10 - 5; // -5 to 5
-        const burstChance = Math.random() > 0.8;
-        const burst = burstChance ? (Math.random() * 80 + 20) : 0; // 20 to 100
-        const newValue = Math.max(0, Math.min(100, Math.abs(baseNoise + burst)));
-        
-        setCurrentValue(Math.round(newValue));
-        
-        setData(prevData => {
-          const newData = [...prevData.slice(1), { time: timeRef.current++, value: newValue }];
-          return newData;
-        });
-      }, 100); // 10Hz update rate
-    } else {
-      setCurrentValue(0);
-    }
-    
-    return () => clearInterval(interval);
-  }, [isRecording]);
-
-  return { data, currentValue };
-};
 
 function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [sessionTime, setSessionTime] = useState(0);
-  const { data: emgData, currentValue } = useMockEMGData(isRecording);
+  
+  // Bluetooth State
+  const [device, setDevice] = useState(null);
+  const [characteristic, setCharacteristic] = useState(null);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  // Data State
+  const [emgData, setEmgData] = useState(Array.from({ length: 50 }, (_, i) => ({ time: i, value: 0 })));
+  const [currentValue, setCurrentValue] = useState(0);
+  const timeRef = useRef(50);
+
+  // Default ESP32 UUIDs (can be changed later by user)
+  const SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
+  const CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
 
   // Timer logic
   useEffect(() => {
@@ -59,29 +39,153 @@ function App() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleConnect = () => {
-    // Simulate connection delay
-    setTimeout(() => {
-      setIsConnected(!isConnected);
-      if (isConnected) setIsRecording(false); // Stop if disconnecting
-    }, 500);
+  const handleConnect = async () => {
+    setErrorMsg("");
+    if (isConnected && device) {
+      // Disconnect
+      if (device.gatt.connected) {
+        device.gatt.disconnect();
+      }
+      setIsConnected(false);
+      setDevice(null);
+      setCharacteristic(null);
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      if (!navigator.bluetooth) {
+        throw new Error("Web Bluetooth API is not supported in this browser. Please use Chrome or Edge on PC/Android.");
+      }
+
+      console.log('Requesting Bluetooth Device...');
+      const btDevice = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [SERVICE_UUID, 'battery_service', 'heart_rate', 'generic_access'] // Added common UUIDs just in case
+      });
+
+      console.log('Connecting to GATT Server...');
+      const server = await btDevice.gatt.connect();
+
+      btDevice.addEventListener('gattserverdisconnected', () => {
+        console.log('Device disconnected');
+        setIsConnected(false);
+        setIsRecording(false);
+        setDevice(null);
+        setCharacteristic(null);
+      });
+
+      console.log('Getting Service...');
+      // Try to get the specific custom service, if it fails, we just show connected status anyway
+      try {
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        console.log('Getting Characteristic...');
+        const char = await service.getCharacteristic(CHARACTERISTIC_UUID);
+        setCharacteristic(char);
+      } catch (e) {
+        console.warn("Could not find specific ESP32 UUIDs. Connected without real-time data streaming.", e);
+        setErrorMsg("Connected, but could not find the specific EMG UUIDs (Service: 4fafc..., Char: beb54...). Check your board code.");
+      }
+
+      setDevice(btDevice);
+      setIsConnected(true);
+
+    } catch (error) {
+      console.error(error);
+      setErrorMsg(error.message);
+    }
   };
 
-  const toggleRecording = () => {
-    if (!isConnected) return; // Must be connected
-    setIsRecording(!isRecording);
+  const toggleRecording = async () => {
+    if (!isConnected) return;
+    
+    if (!isRecording) {
+      // Start recording
+      setIsRecording(true);
+      if (characteristic) {
+        try {
+          await characteristic.startNotifications();
+          characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+          console.log('Notifications started');
+        } catch (error) {
+          console.error("Error starting notifications:", error);
+          setErrorMsg("Error starting sensor notifications: " + error.message);
+        }
+      } else {
+        // Fallback to mock data if no characteristic found but we want to test
+        startMockData();
+      }
+    } else {
+      // Stop recording
+      setIsRecording(false);
+      if (characteristic) {
+        try {
+          await characteristic.stopNotifications();
+          characteristic.removeEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+        } catch (error) {
+          console.error(error);
+        }
+      } else {
+        stopMockData();
+      }
+    }
   };
 
-  // Calculate moving average
+  const handleCharacteristicValueChanged = (event) => {
+    const value = event.target.value;
+    // Assuming the device sends an 8-bit or 16-bit unsigned integer representing the EMG signal (0-100 or 0-1024)
+    // Adjust this parsing based on how your ESP32 actually sends the data!
+    let sensorValue = 0;
+    try {
+        // Example: Reading as 8-bit Unsigned Integer
+        sensorValue = value.getUint8(0); 
+        
+        // If your ESP32 sends a string, use: 
+        // const decoder = new TextDecoder('utf-8');
+        // sensorValue = parseInt(decoder.decode(value));
+    } catch (e) {
+        console.error("Error parsing value", e);
+    }
+
+    // Normalize value to 0-100 for the UI
+    // If your max value from ADC is 1024, do: Math.round((sensorValue / 1024) * 100)
+    const normalizedValue = Math.min(100, Math.max(0, sensorValue));
+    
+    setCurrentValue(normalizedValue);
+    setEmgData(prevData => {
+      return [...prevData.slice(1), { time: timeRef.current++, value: normalizedValue }];
+    });
+  };
+
+  // --- MOCK DATA FALLBACK LOGIC ---
+  const mockIntervalRef = useRef(null);
+  const startMockData = () => {
+    if (mockIntervalRef.current) clearInterval(mockIntervalRef.current);
+    mockIntervalRef.current = setInterval(() => {
+      const baseNoise = Math.random() * 10 - 5;
+      const burstChance = Math.random() > 0.8;
+      const burst = burstChance ? (Math.random() * 80 + 20) : 0;
+      const newValue = Math.max(0, Math.min(100, Math.abs(baseNoise + burst)));
+      
+      setCurrentValue(Math.round(newValue));
+      setEmgData(prevData => [...prevData.slice(1), { time: timeRef.current++, value: Math.round(newValue) }]);
+    }, 100);
+  };
+  const stopMockData = () => {
+    if (mockIntervalRef.current) clearInterval(mockIntervalRef.current);
+    setCurrentValue(0);
+  };
+  // ---------------------------------
+
   const avgStrength = Math.round(emgData.reduce((acc, curr) => acc + curr.value, 0) / emgData.length);
 
   return (
     <div className="app-container">
-      {/* Header */}
       <header className="header">
         <div>
           <h1>EMG Grip Therapy</h1>
-          <p className="subtitle">Real-time muscle activation monitoring</p>
+          <p className="subtitle">Real-time muscle activation monitoring (Bluetooth)</p>
+          {errorMsg && <p style={{ color: 'var(--accent-red)', fontSize: '0.875rem', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><AlertTriangle size={16}/> {errorMsg}</p>}
         </div>
         <div className="status-badge" style={{ 
           background: isConnected ? 'rgba(57, 255, 20, 0.1)' : 'rgba(255, 255, 255, 0.05)',
@@ -89,14 +193,11 @@ function App() {
           borderColor: isConnected ? 'rgba(57, 255, 20, 0.2)' : 'var(--border-color)'
         }}>
           {isConnected && <div className="status-dot"></div>}
-          {isConnected ? 'Device Connected' : 'Disconnected'}
+          {isConnected ? `Connected: ${device?.name || 'Device'}` : 'Disconnected'}
         </div>
       </header>
 
-      {/* Main Dashboard Grid */}
       <main className="dashboard-grid">
-        
-        {/* Signal Chart (Span 8 cols) */}
         <section className="card col-span-8">
           <div className="card-title">
             <Activity size={24} />
@@ -120,14 +221,13 @@ function App() {
                   stroke="var(--accent-blue)" 
                   strokeWidth={3} 
                   dot={false}
-                  isAnimationActive={false} // Important for real-time feel
+                  isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </section>
 
-        {/* Grip Meter & Controls (Span 4 cols) */}
         <section className="card col-span-4" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="card-title">
             <Power size={24} />
@@ -135,16 +235,8 @@ function App() {
           </div>
           
           <div className="meter-container">
-            {/* SVG Circular Progress */}
             <svg width="200" height="200" viewBox="0 0 200 200">
-              <circle 
-                cx="100" cy="100" r="90" 
-                fill="none" 
-                stroke="var(--border-color)" 
-                strokeWidth="15" 
-                strokeDasharray="565.48" // 2 * pi * 90
-                strokeDashoffset="141.37" // 1/4 gap at bottom (optional, doing full circle for simplicity)
-              />
+              <circle cx="100" cy="100" r="90" fill="none" stroke="var(--border-color)" strokeWidth="15" strokeDasharray="565.48" strokeDashoffset="141.37" />
               <circle 
                 cx="100" cy="100" r="90" 
                 fill="none" 
@@ -162,15 +254,14 @@ function App() {
             </div>
           </div>
 
-          {/* Control Panel */}
           <div style={{ marginTop: 'auto' }}>
             <div className="control-grid">
               <button 
                 className={`btn ${isConnected ? 'btn-secondary' : 'btn-primary'}`}
                 onClick={handleConnect}
               >
-                <Bluetooth size={18} />
-                {isConnected ? 'Disconnect' : 'Connect'}
+                {isConnected ? <BluetoothConnected size={18} /> : <Bluetooth size={18} />}
+                {isConnected ? 'Disconnect' : 'Pair Device'}
               </button>
               
               <button 
@@ -185,7 +276,6 @@ function App() {
           </div>
         </section>
 
-        {/* Stats Row */}
         <section className="card col-span-4">
           <h3 className="stat-label">Session Duration</h3>
           <div className="stat-value">{formatTime(sessionTime)}</div>
