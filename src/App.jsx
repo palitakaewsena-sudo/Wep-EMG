@@ -19,9 +19,9 @@ function App() {
   const timeRef = useRef(200);
   const bufferRef = useRef("");
 
-  // Default ESP32 UUIDs (can be changed later by user)
-  const SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
-  const CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+  // Standard BT05 / HM-10 / AT-09 UUIDs
+  const SERVICE_UUID = 'ffe0';
+  const CHARACTERISTIC_UUID = 'ffe1';
 
   // Timer logic
   useEffect(() => {
