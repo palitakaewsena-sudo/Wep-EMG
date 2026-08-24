@@ -12,6 +12,7 @@ function App() {
   const [device, setDevice] = useState(null);
   const [characteristic, setCharacteristic] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [debugHex, setDebugHex] = useState("");
 
   // Data State
   const [emgData, setEmgData] = useState(Array.from({ length: 50 }, (_, i) => ({ time: i, value: 0 })));
@@ -135,6 +136,13 @@ function App() {
     const value = event.target.value;
     let sensorValue = 0;
     
+    // Convert DataView to Hex string for debugging
+    try {
+      const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+      const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      setDebugHex(`Length: ${value.byteLength} bytes | Hex: ${hex}`);
+    } catch(e) {}
+    
     try {
       // 1. Try to parse as String (e.g., if ESP32 uses Serial.println or similar string transmission)
       const decoder = new TextDecoder('utf-8');
@@ -204,6 +212,12 @@ function App() {
           {isConnected ? `Connected: ${device?.name || 'Device'}` : 'Disconnected'}
         </div>
       </header>
+      
+      {debugHex && (
+        <div style={{ background: 'rgba(0,0,0,0.5)', padding: '0.5rem', borderRadius: '8px', marginBottom: '1rem', fontFamily: 'monospace', color: 'var(--accent-blue)', fontSize: '0.85rem' }}>
+          Debug Signal: {debugHex}
+        </div>
+      )}
 
       <main className="dashboard-grid">
         <section className="card col-span-8">
