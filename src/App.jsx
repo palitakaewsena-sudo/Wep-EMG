@@ -152,14 +152,10 @@ function App() {
 
       for (let line of lines) {
         line = line.trim();
-        if (line.startsWith("EMG:")) {
-          // Extract the number after "EMG:"
-          const numStr = line.substring(4);
-          if (!isNaN(numStr) && numStr !== "") {
-            const parsedVal = parseFloat(numStr);
-            latestValue = parsedVal;
-            newPoints.push({ time: timeRef.current++, value: parsedVal });
-          }
+        if (line !== "" && !isNaN(line)) {
+          const parsedVal = parseFloat(line);
+          latestValue = parsedVal;
+          newPoints.push({ time: timeRef.current++, value: parsedVal });
         }
       }
 
