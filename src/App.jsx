@@ -19,9 +19,9 @@ function App() {
   const timeRef = useRef(200);
   const bufferRef = useRef("");
 
-  // Standard BT05 / HM-10 / AT-09 UUIDs
-  const SERVICE_UUID = 'ffe0';
-  const CHARACTERISTIC_UUID = 'ffe1';
+  // Standard BT05 / HM-10 / AT-09 UUIDs (must be full 128-bit string or 0x hex)
+  const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
+  const CHARACTERISTIC_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
 
   // Timer logic
   useEffect(() => {
