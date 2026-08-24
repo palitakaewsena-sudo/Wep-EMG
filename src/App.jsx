@@ -14,10 +14,11 @@ function App() {
   const [errorMsg, setErrorMsg] = useState("");
   const [debugHex, setDebugHex] = useState("");
 
-  const [emgData, setEmgData] = useState(Array.from({ length: 200 }, (_, i) => ({ time: i, value: 0 })));
+  const [emgData, setEmgData] = useState(Array.from({ length: 200 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
   const [currentValue, setCurrentValue] = useState(0);
   const timeRef = useRef(200);
   const bufferRef = useRef("");
+  const filterRef = useRef({ prevX: null, prevY: 0 });
 
   // Standard BT05 / HM-10 / AT-09 UUIDs (must be full 128-bit string or 0x hex)
   const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
@@ -75,6 +76,7 @@ function App() {
         setDevice(null);
         setCharacteristic(null);
         bufferRef.current = "";
+        filterRef.current = { prevX: null, prevY: 0 };
       });
 
       console.log('Getting Service...');
@@ -153,15 +155,32 @@ function App() {
       for (let line of lines) {
         line = line.trim();
         if (line !== "" && !isNaN(line)) {
-          const parsedVal = parseFloat(line);
-          latestValue = parsedVal;
-          newPoints.push({ time: timeRef.current++, value: parsedVal });
+          const rawVal = parseFloat(line);
+          
+          // Initialize filter on first read to prevent massive spike
+          if (filterRef.current.prevX === null) {
+            filterRef.current.prevX = rawVal;
+            filterRef.current.prevY = 0;
+          }
+          
+          // DC Blocker (High-Pass Filter) to center wave at 0
+          // R = 0.99 controls how fast it centers. 0.99 is standard for AC coupling.
+          const R = 0.99;
+          const y = rawVal - filterRef.current.prevX + R * filterRef.current.prevY;
+          filterRef.current.prevX = rawVal;
+          filterRef.current.prevY = y;
+          
+          // Convert the centered AC signal to Voltage (assumes 5V system, 10-bit ADC)
+          const voltage = (y / 1023) * 5.0;
+
+          latestValue = voltage;
+          newPoints.push({ time: timeRef.current++, value: voltage, raw: rawVal });
         }
       }
 
       if (newPoints.length > 0) {
         // Update current value to the last one processed
-        if (latestValue !== null) setCurrentValue(Math.round(latestValue));
+        if (latestValue !== null) setCurrentValue(latestValue);
         
         // Batch update chart data
         setEmgData(prevData => {
@@ -197,14 +216,12 @@ function App() {
 
   const avgStrength = Math.round(emgData.reduce((acc, curr) => acc + curr.value, 0) / emgData.length);
 
-  // Calculate Vmax, Vmin, Vp-p
+  // Calculate Vmax, Vmin, Vp-p based on the centered Voltage (value)
   const activeData = emgData.filter(d => d.time >= 200);
   let vmin = 0, vmax = 0, vpp = 0;
   if (activeData.length > 0) {
-    const rawMin = Math.min(...activeData.map(d => d.value));
-    const rawMax = Math.max(...activeData.map(d => d.value));
-    vmin = (rawMin / 1023) * 5.0;
-    vmax = (rawMax / 1023) * 5.0;
+    vmin = Math.min(...activeData.map(d => d.value));
+    vmax = Math.max(...activeData.map(d => d.value));
     vpp = vmax - vmin;
   }
 
@@ -241,10 +258,22 @@ function App() {
           
           <div className="chart-container">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={emgData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
+              <LineChart data={emgData} margin={{ top: 20, right: 30, left: 10, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false} />
-                <XAxis dataKey="time" hide={true} />
-                <YAxis domain={['auto', 'auto']} stroke="rgba(0,0,0,0.3)" />
+                <XAxis 
+                  dataKey="time" 
+                  tickFormatter={(val) => (val / 20).toFixed(1)} 
+                  label={{ value: 'Time (s)', position: 'insideBottom', offset: -10, fill: 'var(--text-secondary)' }} 
+                  stroke="rgba(0,0,0,0.3)"
+                  tick={{ fill: 'var(--text-secondary)' }}
+                />
+                <YAxis 
+                  domain={['auto', 'auto']} 
+                  label={{ value: 'Voltage (V)', angle: -90, position: 'insideLeft', offset: -5, fill: 'var(--text-secondary)' }} 
+                  stroke="rgba(0,0,0,0.3)"
+                  tick={{ fill: 'var(--text-secondary)' }}
+                  tickFormatter={(val) => val.toFixed(1)}
+                />
                 <Tooltip 
                   contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
                   itemStyle={{ color: 'var(--accent-blue)' }}
@@ -284,8 +313,8 @@ function App() {
               />
             </svg>
             <div className="meter-value-large">
-              <span>{currentValue}</span>
-              <span className="meter-unit">RAW</span>
+              <span>{currentValue.toFixed(2)}</span>
+              <span className="meter-unit">VOLTAGE (V)</span>
             </div>
           </div>
 
