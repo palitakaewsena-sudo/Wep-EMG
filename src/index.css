@@ -245,29 +245,31 @@ h1 {
 }
 
 /* Meter */
-.meter-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 250px;
-  position: relative;
+.metrics-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 2rem;
 }
 
-.meter-value-large {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 3rem;
+.metric-box {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-color);
+  padding: 1.5rem;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.metric-value {
+  font-size: 2rem;
   font-weight: 700;
-  color: var(--text-primary);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  color: var(--accent-blue);
+  font-variant-numeric: tabular-nums;
 }
 
-.meter-unit {
+.metric-label {
   font-size: 1rem;
   color: var(--text-secondary);
   font-weight: 400;

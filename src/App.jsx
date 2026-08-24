@@ -197,6 +197,17 @@ function App() {
 
   const avgStrength = Math.round(emgData.reduce((acc, curr) => acc + curr.value, 0) / emgData.length);
 
+  // Calculate Vmax, Vmin, Vp-p
+  const activeData = emgData.filter(d => d.time >= 200);
+  let vmin = 0, vmax = 0, vpp = 0;
+  if (activeData.length > 0) {
+    const rawMin = Math.min(...activeData.map(d => d.value));
+    const rawMax = Math.max(...activeData.map(d => d.value));
+    vmin = (rawMin / 1023) * 5.0;
+    vmax = (rawMax / 1023) * 5.0;
+    vpp = vmax - vmin;
+  }
+
   return (
     <div className="app-container">
       <header className="header">
@@ -301,26 +312,26 @@ function App() {
         </section>
 
         <section className="card col-span-4">
-          <h3 className="stat-label">Session Duration</h3>
-          <div className="stat-value">{formatTime(sessionTime)}</div>
+          <h3 className="stat-label">Vmax (Maximum)</h3>
+          <div className="stat-value">{vmax.toFixed(2)} <span className="stat-label" style={{ fontSize: '1rem' }}>V</span></div>
           <div className="stat-trend" style={{ color: 'var(--text-secondary)' }}>
-            <Activity size={14} style={{ marginRight: '4px' }}/> Active Timer
+            <Activity size={14} style={{ marginRight: '4px' }}/> Highest Peak
           </div>
         </section>
 
         <section className="card col-span-4">
-          <h3 className="stat-label">Average Strength</h3>
-          <div className="stat-value">{avgStrength} <span className="stat-label" style={{ fontSize: '1rem' }}>%</span></div>
-          <div className="stat-trend trend-up">
-            Target: &gt; 50%
+          <h3 className="stat-label">Vmin (Minimum)</h3>
+          <div className="stat-value">{vmin.toFixed(2)} <span className="stat-label" style={{ fontSize: '1rem' }}>V</span></div>
+          <div className="stat-trend trend-down">
+            Lowest Trough
           </div>
         </section>
 
         <section className="card col-span-4">
-          <h3 className="stat-label">Repetitions</h3>
-          <div className="stat-value">{Math.floor(sessionTime / 5)}</div>
-          <div className="stat-trend" style={{ color: 'var(--text-secondary)' }}>
-            Estimated based on activity
+          <h3 className="stat-label">Vp-p (Peak-to-Peak)</h3>
+          <div className="stat-value">{vpp.toFixed(2)} <span className="stat-label" style={{ fontSize: '1rem' }}>V</span></div>
+          <div className="stat-trend" style={{ color: 'var(--accent-blue)' }}>
+            Amplitude Swing
           </div>
         </section>
 
