@@ -216,19 +216,21 @@ function App() {
 
   const avgStrength = Math.round(emgData.reduce((acc, curr) => acc + curr.value, 0) / emgData.length);
 
-  // Calculate Vmax, Vmin, Vp-p based on the centered Voltage (value)
+  // Calculate Vmax, Vmin, Vp-p based on the Absolute Voltage (including 2.5V DC offset)
   // Use 5th and 95th percentiles to avoid glitchy/erratic readings ("เพี้ยน")
   const activeData = emgData.filter(d => d.time >= 200);
   let vmin = 0, vmax = 0, vpp = 0, freq = 0, period = 0;
   if (activeData.length > 20) {
-    let sorted = activeData.map(d => d.value).sort((a,b) => a-b);
-    let minIdx = Math.floor(sorted.length * 0.05);
-    let maxIdx = Math.floor(sorted.length * 0.95);
-    vmin = sorted[minIdx];
-    vmax = sorted[maxIdx];
+    let sortedRaw = activeData.map(d => d.raw).sort((a,b) => a-b);
+    let minIdx = Math.floor(sortedRaw.length * 0.05);
+    let maxIdx = Math.floor(sortedRaw.length * 0.95);
+    
+    // Convert raw ADC (0-1023) to Absolute Voltage (0-5V)
+    vmin = (sortedRaw[minIdx] / 1023) * 5.0;
+    vmax = (sortedRaw[maxIdx] / 1023) * 5.0;
     vpp = vmax - vmin;
 
-    // Calculate Frequency (Hz) using zero-crossings
+    // Calculate Frequency (Hz) using zero-crossings (on the centered AC value)
     let zeroCrossings = [];
     for (let i = 1; i < activeData.length; i++) {
       if (activeData[i-1].value < 0 && activeData[i].value >= 0) {
@@ -318,27 +320,20 @@ function App() {
 
         <section className="card col-span-4" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="card-title">
-            <Power size={24} />
-            <h2>Current Strength</h2>
+            <Activity size={24} />
+            <h2>Control Panel</h2>
           </div>
           
-          <div className="meter-container">
-            <svg width="200" height="200" viewBox="0 0 200 200">
-              <circle cx="100" cy="100" r="90" fill="none" stroke="var(--border-color)" strokeWidth="15" strokeDasharray="565.48" strokeDashoffset="141.37" />
-              <circle 
-                cx="100" cy="100" r="90" 
-                fill="none" 
-                stroke={currentValue > 70 ? "var(--accent-green)" : currentValue > 40 ? "var(--accent-blue)" : "var(--border-color)"} 
-                strokeWidth="15" 
-                strokeDasharray="565.48"
-                strokeDashoffset={565.48 - (565.48 * currentValue) / 100}
-                style={{ transition: 'stroke-dashoffset 0.1s ease-out, stroke 0.3s ease' }}
-                transform="rotate(-90 100 100)"
-              />
-            </svg>
-            <div className="meter-value-large">
-              <span>{currentValue.toFixed(2)}</span>
-              <span className="meter-unit">VOLTAGE (V)</span>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '2rem 0' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '1px' }}>
+              REAL-TIME SIGNAL
+            </div>
+            <div style={{ fontSize: '4rem', fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', margin: '0.5rem 0' }}>
+              {currentValue > 0 ? '+' : ''}{currentValue.toFixed(2)} <span style={{ fontSize: '1.5rem', color: 'var(--text-secondary)' }}>V</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-blue)', fontSize: '0.85rem', fontWeight: 500, background: 'rgba(2, 132, 199, 0.1)', padding: '4px 12px', borderRadius: '12px' }}>
+              <div className="status-dot" style={{ background: 'var(--accent-blue)' }}></div>
+              AC-Coupled (Centered at 0V)
             </div>
           </div>
 
