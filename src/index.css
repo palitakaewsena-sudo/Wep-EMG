@@ -1,21 +1,21 @@
 :root {
-  --bg-main: #0B0E14;
-  --bg-card: #151A22;
-  --bg-card-hover: #1C222C;
-  --text-primary: #FFFFFF;
-  --text-secondary: #8B949E;
+  --bg-main: #F4F7F6;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #F8FAFC;
+  --text-primary: #1E293B;
+  --text-secondary: #64748B;
   
-  --accent-blue: #00F0FF;
-  --accent-green: #39FF14;
-  --accent-red: #FF003C;
+  --accent-blue: #0284C7;
+  --accent-green: #16A34A;
+  --accent-red: #DC2626;
   
-  --border-color: rgba(255, 255, 255, 0.05);
+  --border-color: rgba(0, 0, 0, 0.08);
   
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: dark;
+  color-scheme: light;
   color: var(--text-primary);
   background-color: var(--bg-main);
 
@@ -39,8 +39,8 @@ body {
   min-height: 100vh;
   background-color: var(--bg-main);
   background-image: 
-    radial-gradient(circle at 15% 50%, rgba(0, 240, 255, 0.03) 0%, transparent 50%),
-    radial-gradient(circle at 85% 30%, rgba(57, 255, 20, 0.03) 0%, transparent 50%);
+    radial-gradient(circle at 15% 50%, rgba(2, 132, 199, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 85% 30%, rgba(22, 163, 74, 0.03) 0%, transparent 50%);
 }
 
 #root {
@@ -75,15 +75,15 @@ h1 {
   border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 1.5rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
   backdrop-filter: blur(10px);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
-  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.12);
 }
 
 .card-title {
@@ -205,25 +205,25 @@ h1 {
 
 .btn-primary {
   background: var(--accent-blue);
-  color: #000;
-  box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+  color: #FFF;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2);
 }
 
 .btn-primary:hover {
-  background: #19f3ff;
-  box-shadow: 0 0 25px rgba(0, 240, 255, 0.5);
+  background: #0369A1;
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.3);
   transform: translateY(-1px);
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.03);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.15);
 }
 
 .btn-danger {

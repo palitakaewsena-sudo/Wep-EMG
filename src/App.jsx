@@ -231,9 +231,9 @@ function App() {
           <div className="chart-container">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={emgData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false} />
                 <XAxis dataKey="time" hide={true} />
-                <YAxis domain={['auto', 'auto']} stroke="rgba(255,255,255,0.5)" />
+                <YAxis domain={['auto', 'auto']} stroke="rgba(0,0,0,0.3)" />
                 <Tooltip 
                   contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
                   itemStyle={{ color: 'var(--accent-blue)' }}
