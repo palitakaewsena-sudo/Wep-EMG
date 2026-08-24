@@ -133,27 +133,32 @@ function App() {
 
   const handleCharacteristicValueChanged = (event) => {
     const value = event.target.value;
-    // Assuming the device sends an 8-bit or 16-bit unsigned integer representing the EMG signal (0-100 or 0-1024)
-    // Adjust this parsing based on how your ESP32 actually sends the data!
     let sensorValue = 0;
+    
     try {
-        // Example: Reading as 8-bit Unsigned Integer
-        sensorValue = value.getUint8(0); 
-        
-        // If your ESP32 sends a string, use: 
-        // const decoder = new TextDecoder('utf-8');
-        // sensorValue = parseInt(decoder.decode(value));
+      // 1. Try to parse as String (e.g., if ESP32 uses Serial.println or similar string transmission)
+      const decoder = new TextDecoder('utf-8');
+      const text = decoder.decode(value).trim();
+      
+      if (text !== "" && !isNaN(text)) {
+        sensorValue = parseFloat(text);
+      } else {
+        // 2. Fallback to raw bytes (int16 or uint8) if it's not a valid string
+        if (value.byteLength >= 2) {
+          sensorValue = value.getInt16(0, true); // true = little-endian (ESP32 default)
+        } else if (value.byteLength === 1) {
+          sensorValue = value.getUint8(0);
+        }
+      }
     } catch (e) {
-        console.error("Error parsing value", e);
+      console.error("Error parsing value", e);
     }
 
-    // Normalize value to 0-100 for the UI
-    // If your max value from ADC is 1024, do: Math.round((sensorValue / 1024) * 100)
-    const normalizedValue = Math.min(100, Math.max(0, sensorValue));
+    // Do NOT clamp the value. Let the sine wave display its full real range!
+    setCurrentValue(Math.round(sensorValue));
     
-    setCurrentValue(normalizedValue);
     setEmgData(prevData => {
-      return [...prevData.slice(1), { time: timeRef.current++, value: normalizedValue }];
+      return [...prevData.slice(1), { time: timeRef.current++, value: sensorValue }];
     });
   };
 
@@ -209,7 +214,7 @@ function App() {
               <LineChart data={emgData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
                 <XAxis dataKey="time" hide={true} />
-                <YAxis domain={[0, 100]} stroke="rgba(255,255,255,0.5)" />
+                <YAxis domain={['auto', 'auto']} stroke="rgba(255,255,255,0.5)" />
                 <Tooltip 
                   contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
                   itemStyle={{ color: 'var(--accent-blue)' }}
@@ -250,7 +255,7 @@ function App() {
             </svg>
             <div className="meter-value-large">
               <span>{currentValue}</span>
-              <span className="meter-unit">% MVC</span>
+              <span className="meter-unit">RAW</span>
             </div>
           </div>
 
