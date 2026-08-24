@@ -217,12 +217,35 @@ function App() {
   const avgStrength = Math.round(emgData.reduce((acc, curr) => acc + curr.value, 0) / emgData.length);
 
   // Calculate Vmax, Vmin, Vp-p based on the centered Voltage (value)
+  // Use 5th and 95th percentiles to avoid glitchy/erratic readings ("เพี้ยน")
   const activeData = emgData.filter(d => d.time >= 200);
-  let vmin = 0, vmax = 0, vpp = 0;
-  if (activeData.length > 0) {
-    vmin = Math.min(...activeData.map(d => d.value));
-    vmax = Math.max(...activeData.map(d => d.value));
+  let vmin = 0, vmax = 0, vpp = 0, freq = 0, period = 0;
+  if (activeData.length > 20) {
+    let sorted = activeData.map(d => d.value).sort((a,b) => a-b);
+    let minIdx = Math.floor(sorted.length * 0.05);
+    let maxIdx = Math.floor(sorted.length * 0.95);
+    vmin = sorted[minIdx];
+    vmax = sorted[maxIdx];
     vpp = vmax - vmin;
+
+    // Calculate Frequency (Hz) using zero-crossings
+    let zeroCrossings = [];
+    for (let i = 1; i < activeData.length; i++) {
+      if (activeData[i-1].value < 0 && activeData[i].value >= 0) {
+        zeroCrossings.push(activeData[i].time);
+      }
+    }
+    
+    if (zeroCrossings.length >= 2) {
+      let totalPeriod = 0;
+      for (let i = 1; i < zeroCrossings.length; i++) {
+        totalPeriod += (zeroCrossings[i] - zeroCrossings[i-1]);
+      }
+      const avgPeriodTicks = totalPeriod / (zeroCrossings.length - 1);
+      // Assuming 1 tick = 50ms = 0.05s based on Arduino's delay(50)
+      period = avgPeriodTicks * 0.05; 
+      freq = 1 / period;
+    }
   }
 
   return (
@@ -266,6 +289,7 @@ function App() {
                   label={{ value: 'Time (s)', position: 'insideBottom', offset: -10, fill: 'var(--text-secondary)' }} 
                   stroke="rgba(0,0,0,0.3)"
                   tick={{ fill: 'var(--text-secondary)' }}
+                  minTickGap={40}
                 />
                 <YAxis 
                   domain={['auto', 'auto']} 
@@ -340,27 +364,35 @@ function App() {
           </div>
         </section>
 
-        <section className="card col-span-4">
-          <h3 className="stat-label">Vmax (Maximum)</h3>
+        <section className="card col-span-3">
+          <h3 className="stat-label">Vmax (Max)</h3>
           <div className="stat-value">{vmax.toFixed(2)} <span className="stat-label" style={{ fontSize: '1rem' }}>V</span></div>
           <div className="stat-trend" style={{ color: 'var(--text-secondary)' }}>
-            <Activity size={14} style={{ marginRight: '4px' }}/> Highest Peak
+            <Activity size={14} style={{ marginRight: '4px' }}/> Top Peak
           </div>
         </section>
 
-        <section className="card col-span-4">
-          <h3 className="stat-label">Vmin (Minimum)</h3>
+        <section className="card col-span-3">
+          <h3 className="stat-label">Vmin (Min)</h3>
           <div className="stat-value">{vmin.toFixed(2)} <span className="stat-label" style={{ fontSize: '1rem' }}>V</span></div>
           <div className="stat-trend trend-down">
-            Lowest Trough
+            Bottom Trough
           </div>
         </section>
 
-        <section className="card col-span-4">
-          <h3 className="stat-label">Vp-p (Peak-to-Peak)</h3>
+        <section className="card col-span-3">
+          <h3 className="stat-label">Vp-p (Amplitude)</h3>
           <div className="stat-value">{vpp.toFixed(2)} <span className="stat-label" style={{ fontSize: '1rem' }}>V</span></div>
           <div className="stat-trend" style={{ color: 'var(--accent-blue)' }}>
-            Amplitude Swing
+            Peak to Peak
+          </div>
+        </section>
+
+        <section className="card col-span-3">
+          <h3 className="stat-label">Frequency</h3>
+          <div className="stat-value">{freq > 0 ? freq.toFixed(1) : '-'} <span className="stat-label" style={{ fontSize: '1rem' }}>Hz</span></div>
+          <div className="stat-trend" style={{ color: 'var(--accent-green)' }}>
+            Period: {period > 0 ? period.toFixed(2) : '-'} s
           </div>
         </section>
 
