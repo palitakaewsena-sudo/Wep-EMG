@@ -18,6 +18,7 @@ function App() {
   const [emgData, setEmgData] = useState(Array.from({ length: 50 }, (_, i) => ({ time: i, value: 0 })));
   const [currentValue, setCurrentValue] = useState(0);
   const timeRef = useRef(50);
+  const bufferRef = useRef("");
 
   // Default ESP32 UUIDs (can be changed later by user)
   const SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
@@ -74,6 +75,7 @@ function App() {
         setIsRecording(false);
         setDevice(null);
         setCharacteristic(null);
+        bufferRef.current = "";
       });
 
       console.log('Getting Service...');
@@ -134,43 +136,48 @@ function App() {
 
   const handleCharacteristicValueChanged = (event) => {
     const value = event.target.value;
-    let sensorValue = 0;
-    
-    // Convert DataView to Hex string for debugging
-    try {
-      const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-      const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-      setDebugHex(`Length: ${value.byteLength} bytes | Hex: ${hex}`);
-    } catch(e) {}
     
     try {
-      // 1. Try to parse as String (e.g., if ESP32 uses Serial.println or similar string transmission)
       const decoder = new TextDecoder('utf-8');
-      const text = decoder.decode(value).trim();
+      const textChunk = decoder.decode(value);
+      bufferRef.current += textChunk;
+
+      // Process all complete lines in the buffer
+      let lines = bufferRef.current.split('\n');
       
-      if (text !== "" && !isNaN(text) && value.byteLength !== 4) {
-        sensorValue = parseFloat(text);
-      } else {
-        // 2. Fallback to raw bytes based on length
-        if (value.byteLength === 4) {
-          // Sine waves are often sent as 4-byte Floats
-          sensorValue = value.getFloat32(0, true); 
-        } else if (value.byteLength === 2) {
-          sensorValue = value.getInt16(0, true); 
-        } else if (value.byteLength === 1) {
-          sensorValue = value.getUint8(0);
+      // The last element might be an incomplete string without '\n', save it back to buffer
+      bufferRef.current = lines.pop(); 
+      
+      let latestValue = null;
+      let newPoints = [];
+
+      for (let line of lines) {
+        line = line.trim();
+        if (line.startsWith("EMG:")) {
+          // Extract the number after "EMG:"
+          const numStr = line.substring(4);
+          if (!isNaN(numStr) && numStr !== "") {
+            const parsedVal = parseFloat(numStr);
+            latestValue = parsedVal;
+            newPoints.push({ time: timeRef.current++, value: parsedVal });
+          }
         }
       }
-    } catch (e) {
-      console.error("Error parsing value", e);
-    }
 
-    // Do NOT clamp the value. Let the sine wave display its full real range!
-    setCurrentValue(Math.round(sensorValue));
-    
-    setEmgData(prevData => {
-      return [...prevData.slice(1), { time: timeRef.current++, value: sensorValue }];
-    });
+      if (newPoints.length > 0) {
+        // Update current value to the last one processed
+        if (latestValue !== null) setCurrentValue(Math.round(latestValue));
+        
+        // Batch update chart data
+        setEmgData(prevData => {
+          const combined = [...prevData, ...newPoints];
+          // Keep only the last 50 points so it doesn't freeze the browser
+          return combined.slice(-50);
+        });
+      }
+    } catch (e) {
+      console.error("Error parsing buffered string", e);
+    }
   };
 
   // --- MOCK DATA FALLBACK LOGIC ---
