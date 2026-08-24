@@ -331,9 +331,9 @@ function App() {
             <div style={{ fontSize: '4rem', fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', margin: '0.5rem 0' }}>
               {currentValue > 0 ? '+' : ''}{currentValue.toFixed(2)} <span style={{ fontSize: '1.5rem', color: 'var(--text-secondary)' }}>V</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-blue)', fontSize: '0.85rem', fontWeight: 500, background: 'rgba(2, 132, 199, 0.1)', padding: '4px 12px', borderRadius: '12px' }}>
-              <div className="status-dot" style={{ background: 'var(--accent-blue)' }}></div>
-              AC-Coupled (Centered at 0V)
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-blue)', fontSize: '0.85rem', fontWeight: 500, background: 'rgba(2, 132, 199, 0.1)', padding: '4px 12px', borderRadius: '12px', whiteSpace: 'nowrap' }}>
+              <div className="status-dot" style={{ background: 'var(--accent-blue)', flexShrink: 0 }}></div>
+              AC-Coupled
             </div>
           </div>
 
@@ -344,7 +344,7 @@ function App() {
                 onClick={handleConnect}
               >
                 {isConnected ? <BluetoothConnected size={18} /> : <Bluetooth size={18} />}
-                {isConnected ? 'Disconnect' : 'Pair Device'}
+                {isConnected ? 'Disconnect' : 'Connect'}
               </button>
               
               <button 
