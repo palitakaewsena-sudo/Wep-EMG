@@ -271,6 +271,8 @@ function App() {
 
   const handleStopSession = () => {
     setIsSessionActive(false);
+    setEmgData(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
+    setCurrentVpp(0);
   };
 
   const handleResetSession = () => {
