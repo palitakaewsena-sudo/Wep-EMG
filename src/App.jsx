@@ -203,6 +203,13 @@ function App() {
   const [historyLogs, setHistoryLogs] = useState([]);
   const [histPeriod, setHistPeriod] = useState('week');
 
+  // Custom Settings State
+  const [isCustomTime, setIsCustomTime] = useState(false);
+  const [customMin, setCustomMin] = useState(5);
+  const [customSec, setCustomSec] = useState(0);
+  const [isCustomTarget, setIsCustomTarget] = useState(false);
+  const [customTargetInput, setCustomTargetInput] = useState(20);
+
   const sessionRef = useRef({ 
     isActive: false, 
     startMv: 978.0, 
@@ -218,8 +225,18 @@ function App() {
   }, [isSessionActive, startGripMv, stopGripMv]);
 
   useEffect(() => {
-    setTimeLeft(sessionTimePreset * 60);
-  }, [sessionTimePreset]);
+    if (!isCustomTime) {
+      setTimeLeft(sessionTimePreset * 60);
+    } else {
+      setTimeLeft(customMin * 60 + customSec);
+    }
+  }, [sessionTimePreset, isCustomTime, customMin, customSec]);
+
+  useEffect(() => {
+    if (isSessionActive && gripCount >= (isCustomTarget ? customTargetInput : targetGrips)) {
+      finishSession();
+    }
+  }, [gripCount, isSessionActive, targetGrips, isCustomTarget, customTargetInput]);
 
   const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
   const CHARACTERISTIC_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
@@ -247,7 +264,7 @@ function App() {
     setGripCount(0);
     sessionRef.current.gripCount = 0;
     sessionRef.current.isGripping = false;
-    setTimeLeft(sessionTimePreset * 60);
+    setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
   };
 
@@ -258,14 +275,26 @@ function App() {
   const handleResetSession = () => {
     setIsSessionActive(false);
     setGripCount(0);
-    setTimeLeft(sessionTimePreset * 60);
+    setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setEmgData(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
     setCurrentVpp(0);
   };
 
   const finishSession = () => {
     setIsSessionActive(false);
-    // Add to history logic would go here
+    const targetSetTime = isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60;
+    const actualTime = targetSetTime - timeLeft;
+    
+    const newLog = {
+      id: Date.now(),
+      date: new Date().toLocaleString(lang === 'th' ? 'th-TH' : 'en-US'),
+      setTime: formatTime(targetSetTime),
+      realTime: formatTime(actualTime),
+      grips: sessionRef.current.gripCount,
+      emg: currentVpp.toFixed(1),
+      avg: sessionRef.current.gripCount > 0 ? (actualTime / sessionRef.current.gripCount).toFixed(1) : 0
+    };
+    setHistoryLogs(prev => [newLog, ...prev]);
   };
 
   const handleConnect = async () => {
@@ -333,17 +362,17 @@ function App() {
           // Adjusts slowly to the real center voltage (starts at 2500)
           filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
           
-          // Signal centered at 0 for Oscilloscope view
+          // Signal centered at 0 for Oscilloscope view (Not used for graph anymore)
           const acMv = rawMv - filterRef.current.dcOffset; 
           
           // Use rawMv for absolute Vmax and Vmin (includes the 2.5V shift)
           if (rawMv > maxV) maxV = rawMv;
           if (rawMv < minV) minV = rawMv;
 
-          newPoints.push({ time: timeRef.current++, value: acMv, raw: rawVal, rawMv: rawMv });
-
           if (sessionRef.current.isActive) {
-             if (!sessionRef.current.isGripping && rawMv >= sessionRef.current.startMv) {
+            newPoints.push({ time: timeRef.current++, value: rawMv, raw: rawVal, rawMv: rawMv });
+
+            if (!sessionRef.current.isGripping && rawMv >= sessionRef.current.startMv) {
                sessionRef.current.isGripping = true;
                newGripCount++;
                sessionRef.current.gripCount = newGripCount;
@@ -357,7 +386,8 @@ function App() {
       if (newPoints.length > 0) {
         setRawAdc(lastRaw);
         
-        setEmgData(prevData => {
+        if (sessionRef.current.isActive) {
+          setEmgData(prevData => {
           const combined = [...prevData, ...newPoints].slice(-150);
           
           if (combined.length > 20) {
@@ -397,6 +427,7 @@ function App() {
           
           return combined;
         });
+        }
 
         if (sessionRef.current.isActive && newGripCount !== gripCount) setGripCount(newGripCount);
       }
@@ -472,7 +503,7 @@ function App() {
             <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
               <XAxis dataKey="time" hide />
-              <YAxis domain={[-2500, 2500]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 5000]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
               <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.startAt} ${startGripMv} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
@@ -511,7 +542,7 @@ function App() {
         <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>{t.controlSub}</div>
         
         <div className="timer-select">
-          <span>{sessionTimePreset} นาที</span>
+          <span>{isCustomTime ? `${customMin}:${customSec.toString().padStart(2, '0')} นาที` : `${sessionTimePreset} นาที`}</span>
           <SettingsIcon size={16} color="var(--accent-teal)" />
         </div>
 
@@ -620,12 +651,18 @@ function App() {
             <p className="subtitle">{t.setTimeSub}</p>
             <div className="preset-pills">
               {[1, 3, 5, 10].map(m => (
-                <button key={m} className={`pill ${sessionTimePreset === m ? 'active' : ''}`} onClick={() => setSessionTimePreset(m)}>
+                <button key={m} className={`pill ${!isCustomTime && sessionTimePreset === m ? 'active' : ''}`} onClick={() => { setSessionTimePreset(m); setIsCustomTime(false); }}>
                   {m} นาที
                 </button>
               ))}
-              <button className="pill">{t.custom}</button>
+              <button className={`pill ${isCustomTime ? 'active' : ''}`} onClick={() => setIsCustomTime(true)}>{t.custom}</button>
             </div>
+            {isCustomTime && (
+              <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <input type="number" min="0" value={customMin} onChange={(e) => setCustomMin(parseInt(e.target.value) || 0)} style={{ width: '60px', padding: '0.25rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} /> นาที
+                <input type="number" min="0" max="59" value={customSec} onChange={(e) => setCustomSec(parseInt(e.target.value) || 0)} style={{ width: '60px', padding: '0.25rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} /> วินาที
+              </div>
+            )}
           </div>
         </div>
 
@@ -636,12 +673,17 @@ function App() {
             <p className="subtitle">{t.setTargetSub}</p>
             <div className="preset-pills">
               {[10, 20, 30, 50].map(c => (
-                <button key={c} className={`pill ${targetGrips === c ? 'active' : ''}`} onClick={() => setTargetGrips(c)}>
+                <button key={c} className={`pill ${!isCustomTarget && targetGrips === c ? 'active' : ''}`} onClick={() => { setTargetGrips(c); setIsCustomTarget(false); }}>
                   {c} ครั้ง
                 </button>
               ))}
-              <button className="pill">{t.custom}</button>
+              <button className={`pill ${isCustomTarget ? 'active' : ''}`} onClick={() => setIsCustomTarget(true)}>{t.custom}</button>
             </div>
+            {isCustomTarget && (
+              <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <input type="number" min="1" value={customTargetInput} onChange={(e) => setCustomTargetInput(parseInt(e.target.value) || 1)} style={{ width: '80px', padding: '0.25rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} /> ครั้ง
+              </div>
+            )}
           </div>
         </div>
 
@@ -682,13 +724,19 @@ function App() {
              ))}
           </div>
           <div style={{ position: 'absolute', bottom: 0, left: '30px', right: 0, display: 'flex', justifyContent: 'space-around', fontSize: '12px', color: 'var(--text-muted)' }}>
-            <span>จ.</span><span>อ.</span><span>พ.</span><span>พฤ.</span><span>ศ.</span><span>ส.</span><span>อา.</span>
+            {histPeriod === 'week' ? (
+              <><span>จ.</span><span>อ.</span><span>พ.</span><span>พฤ.</span><span>ศ.</span><span>ส.</span><span>อา.</span></>
+            ) : (
+              <><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span><span>30</span></>
+            )}
           </div>
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
             {t.noData}
           </div>
         </div>
-        <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1rem' }}>วันในสัปดาห์</div>
+        <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1rem' }}>
+          {histPeriod === 'week' ? 'วันในสัปดาห์' : 'วันที่ในเดือน'}
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -704,11 +752,24 @@ function App() {
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td colSpan="6" style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
-                {t.noHistory}
-              </td>
-            </tr>
+            {historyLogs.length > 0 ? (
+              historyLogs.map(log => (
+                <tr key={log.id}>
+                  <td>{log.date}</td>
+                  <td>{log.setTime}</td>
+                  <td>{log.realTime}</td>
+                  <td>{log.grips}</td>
+                  <td>{log.emg}</td>
+                  <td>{log.avg}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="6" style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
+                  {t.noHistory}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
