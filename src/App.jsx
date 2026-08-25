@@ -13,9 +13,12 @@ const i18n = {
   th: {
     appTitle: "EMG Grip Therapy",
     appSub: "Medical Technology · Rehabilitation",
-    tabDashboard: "หน้าแรก",
-    tabHistory: "ประวัติ",
-    tabSettings: "ตั้งค่า",
+    tabConnect: "การเชื่อมต่อ",
+    tabTesters: "คลังข้อมูลผู้ทดสอบ",
+    tabMonitor: "มอนิเตอร์สัญญาณ",
+    tabTraining: "โหมดฝึกฝน",
+    tabCompare: "การเปรียบเทียบ",
+    tabAnalysis: "การวิเคราะห์ผล",
     notConnected: "ยังไม่เชื่อมต่อ",
     deviceSub: "อุปกรณ์ EMG ผ่าน BLE (HM-10)",
     connectBtn: "เชื่อมต่อ Bluetooth",
@@ -106,9 +109,12 @@ const i18n = {
   en: {
     appTitle: "EMG Grip Therapy",
     appSub: "Medical Technology · Rehabilitation",
-    tabDashboard: "Dashboard",
-    tabHistory: "History",
-    tabSettings: "Settings",
+    tabConnect: "Connection",
+    tabTesters: "Tester Repository",
+    tabMonitor: "Signal Monitor",
+    tabTraining: "Training Mode",
+    tabCompare: "Comparison",
+    tabAnalysis: "Result Analysis",
     notConnected: "Not Connected",
     deviceSub: "EMG device via BLE (HM-10)",
     connectBtn: "Connect Bluetooth",
@@ -201,128 +207,84 @@ const i18n = {
 function App() {
   const [lang, setLang] = useState('th');
   const t = i18n[lang];
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('testers');
 
-  // Auth State
-  const [users, setUsers] = useState(() => {
-    const saved = localStorage.getItem('emg_users');
+  // Testers State
+  const [testers, setTesters] = useState(() => {
+    const saved = localStorage.getItem('emg_testers');
     return saved ? JSON.parse(saved) : [];
   });
-  const [currentUser, setCurrentUser] = useState(() => {
-    const activeId = localStorage.getItem('emg_active_user');
-    if (activeId) {
-      const savedUsers = JSON.parse(localStorage.getItem('emg_users') || '[]');
-      return savedUsers.find(u => u.id === activeId) || null;
-    }
-    return null;
+  const [activeTesterId, setActiveTesterId] = useState(() => {
+    return localStorage.getItem('emg_active_tester') || null;
   });
   
-  // Auth UI State
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [selectedUserLogin, setSelectedUserLogin] = useState(null);
-  
-  // Auth Forms
-  const [regName, setRegName] = useState('');
-  const [regGender, setRegGender] = useState('Male');
-  const [regAge, setRegAge] = useState('');
-  const [regPassword, setRegPassword] = useState('');
-  
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
+  const activeTester = testers.find(t => t.id === activeTesterId) || null;
 
-  // Bluetooth State
-  const [isConnected, setIsConnected] = useState(false);
-  const [device, setDevice] = useState(null);
-  const [characteristic, setCharacteristic] = useState(null);
+  // New Tester Form
+  const [isAddingTester, setIsAddingTester] = useState(false);
+  const [testName, setTestName] = useState('');
+  const [testAge, setTestAge] = useState('');
+  const [testGender, setTestGender] = useState('ชาย / Male');
+  const [testWeight, setTestWeight] = useState('');
+  const [testHeight, setTestHeight] = useState('');
+  const [testHand, setTestHand] = useState('ขวา / Right');
 
-  // EMG Data
-  const [emgData, setEmgData] = useState(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
-  const [currentVpp, setCurrentVpp] = useState(0);
-  const [currentVmax, setCurrentVmax] = useState(0);
-  const [currentVmin, setCurrentVmin] = useState(0);
-  const [currentFreq, setCurrentFreq] = useState(0);
-  const [rawAdc, setRawAdc] = useState(0);
-  const timeRef = useRef(150);
-  const bufferRef = useRef("");
-  const filterRef = useRef({ prevX: null, prevY: 0, dcOffset: 2500 });
-  const [dcOffsetState, setDcOffsetState] = useState(2500);
+  const handleAddTester = (e) => {
+    e.preventDefault();
+    if (!testName) return;
 
-  // Settings State
-  const [triggerMult, setTriggerMult] = useState(1.25);
-  const [releaseMult, setReleaseMult] = useState(1.12);
-  const [startGripMv, setStartGripMv] = useState(978.0);
-  const [stopGripMv, setStopGripMv] = useState(880.0);
-  const [sessionTimePreset, setSessionTimePreset] = useState(5); // minutes
-  const [targetGrips, setTargetGrips] = useState(20);
+    const newTester = {
+      id: Date.now().toString(),
+      name: testName,
+      age: testAge,
+      gender: testGender,
+      weight: testWeight,
+      height: testHeight,
+      hand: testHand,
+      createdAt: new Date().toISOString()
+    };
+    
+    const newTesters = [newTester, ...testers];
+    setTesters(newTesters);
+    localStorage.setItem('emg_testers', JSON.stringify(newTesters));
+    
+    // Reset forms
+    setTestName('');
+    setTestAge('');
+    setTestWeight('');
+    setTestHeight('');
+    setIsAddingTester(false);
+  };
 
-  // Session State
-  const [timeLeft, setTimeLeft] = useState(sessionTimePreset * 60);
-  const [isSessionActive, setIsSessionActive] = useState(false);
-  const [gripCount, setGripCount] = useState(0);
-  
-  // History
+  const handleSelectTester = (id) => {
+    setActiveTesterId(id);
+    localStorage.setItem('emg_active_tester', id);
+  };
+
+  const handleDeleteTester = (id) => {
+    if (confirm('คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลผู้ทดสอบนี้?')) {
+      const newTesters = testers.filter(t => t.id !== id);
+      setTesters(newTesters);
+      localStorage.setItem('emg_testers', JSON.stringify(newTesters));
+      if (activeTesterId === id) {
+        setActiveTesterId(null);
+        localStorage.removeItem('emg_active_tester');
+      }
+    }
+  };
+
+  // History State
   const [historyLogs, setHistoryLogs] = useState([]);
   const [histPeriod, setHistPeriod] = useState('week');
 
   useEffect(() => {
-    if (currentUser) {
-      const savedHistory = localStorage.getItem(`emg_history_${currentUser.id}`);
+    if (activeTesterId) {
+      const savedHistory = localStorage.getItem(`emg_history_${activeTesterId}`);
       setHistoryLogs(savedHistory ? JSON.parse(savedHistory) : []);
-    }
-  }, [currentUser]);
-
-  // Auth Handlers
-  const handleRegister = (e) => {
-    e.preventDefault();
-    if (users.length >= 3) {
-      alert(t.authLimitReached);
-      return;
-    }
-    if (!regName || !regPassword) return;
-
-    const newUser = {
-      id: Date.now().toString(),
-      name: regName,
-      gender: regGender,
-      age: regAge,
-      password: regPassword
-    };
-    const newUsers = [...users, newUser];
-    setUsers(newUsers);
-    localStorage.setItem('emg_users', JSON.stringify(newUsers));
-    
-    // Auto login
-    setCurrentUser(newUser);
-    localStorage.setItem('emg_active_user', newUser.id);
-    
-    // Reset forms
-    setRegName('');
-    setRegAge('');
-    setRegPassword('');
-    setIsRegistering(false);
-  };
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (!selectedUserLogin) return;
-    if (loginPassword === selectedUserLogin.password) {
-      setCurrentUser(selectedUserLogin);
-      localStorage.setItem('emg_active_user', selectedUserLogin.id);
-      setLoginPassword('');
-      setLoginError('');
-      setSelectedUserLogin(null);
     } else {
-      setLoginError(t.authWrongPass);
+      setHistoryLogs([]);
     }
-  };
-
-  const handleLogout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('emg_active_user');
-    if (isConnected && device) {
-      device.gatt.disconnect();
-    }
-  };
+  }, [activeTesterId]);
 
   // Custom Settings State
   const [isCustomTime, setIsCustomTime] = useState(false);
@@ -420,8 +382,8 @@ function App() {
     
     setHistoryLogs(prev => {
       const updated = [newLog, ...prev];
-      if (currentUser) {
-        localStorage.setItem(`emg_history_${currentUser.id}`, JSON.stringify(updated));
+      if (activeTesterId) {
+        localStorage.setItem(`emg_history_${activeTesterId}`, JSON.stringify(updated));
       }
       return updated;
     });
@@ -574,119 +536,127 @@ function App() {
     };
   }, [characteristic]);
 
-  const renderAuth = () => (
-    <div className="auth-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '70vh', padding: '2rem' }}>
-      <div className="card" style={{ width: '100%', maxWidth: '400px', padding: '2rem', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)' }}>
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div className="metric-icon teal" style={{ margin: '0 auto 1rem auto', width: '64px', height: '64px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            <Users size={32} />
-          </div>
-          <h2>{isRegistering ? t.authRegister : t.authLogin}</h2>
-        </div>
-        
-        {!isRegistering && (
-          <div>
-            {users.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                {users.map(u => (
-                  <button 
-                    key={u.id} 
-                    style={{ 
-                      display: 'flex', alignItems: 'center', padding: '1rem', 
-                      borderRadius: '12px', border: selectedUserLogin?.id === u.id ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                      background: selectedUserLogin?.id === u.id ? 'rgba(0,188,163,0.05)' : 'white',
-                      textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s'
-                    }}
-                    onClick={() => { setSelectedUserLogin(u); setLoginError(''); setLoginPassword(''); }}
-                  >
-                    <div style={{ background: 'var(--bg-main)', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '1rem' }}>
-                      <User size={20} color="var(--text-secondary)" />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600 }}>{u.name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{u.gender === 'Male' ? t.authMale : u.gender === 'Female' ? t.authFemale : t.authOther}, {u.age}</div>
-                    </div>
-                    {selectedUserLogin?.id === u.id && <Check size={20} color="var(--accent-teal)" />}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '2rem 0', color: 'var(--text-muted)' }}>
-                ไม่มีผู้ใช้งานในระบบ กรุณาลงทะเบียน / No users found, please register
-              </div>
-            )}
-            
-            {selectedUserLogin && (
-              <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>{t.authPassword}</label>
-                  <div style={{ position: 'relative' }}>
-                    <Lock size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                    <input 
-                      type="password" 
-                      value={loginPassword} 
-                      onChange={e => setLoginPassword(e.target.value)} 
-                      placeholder={t.authEnterPass}
-                      required
-                      style={{ width: '100%', padding: '0.75rem 1rem 0.75rem 2.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', boxSizing: 'border-box' }}
-                    />
-                  </div>
-                </div>
-                {loginError && <div style={{ color: 'var(--accent-orange)', fontSize: '0.875rem', textAlign: 'center' }}>{loginError}</div>}
-                <button type="submit" className="btn btn-teal" style={{ width: '100%', justifyContent: 'center' }}>{t.authLogin}</button>
-              </form>
-            )}
-            
-            {users.length < 3 && (
-              <button 
-                className="btn btn-outline" 
-                style={{ width: '100%', marginTop: '1.5rem', justifyContent: 'center' }}
-                onClick={() => { setIsRegistering(true); setSelectedUserLogin(null); }}
-              >
-                <UserPlus size={16} /> {t.authRegister}
-              </button>
-            )}
-            {users.length >= 3 && (
-              <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1rem' }}>
-                {t.authLimitReached}
-              </div>
-            )}
-          </div>
-        )}
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  const filteredTesters = testers.filter(t => 
+    t.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    t.id.includes(searchQuery)
+  );
 
-        {isRegistering && (
-          <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>{t.authName}</label>
-              <input type="text" value={regName} onChange={e => setRegName(e.target.value)} required style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', boxSizing: 'border-box' }} />
+  const renderTesterRepository = () => (
+    <div>
+      <div className="page-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h2>คลังข้อมูลผู้ทดสอบ</h2>
+          <p>จัดการและค้นหารายชื่อผู้เข้ารับการทดสอบทั้งหมด</p>
+        </div>
+        <button className="btn btn-teal" onClick={() => setIsAddingTester(true)}>
+          + เพิ่มทดสอบใหม่ (Add Tester)
+        </button>
+      </div>
+
+      <div style={{ marginBottom: '1.5rem' }}>
+        <input 
+          type="text" 
+          placeholder="ค้นหาด้วยชื่อหรือ ID..." 
+          className="form-control"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{ background: 'white' }}
+        />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
+        {filteredTesters.length > 0 ? (
+          filteredTesters.map(t => (
+            <div key={t.id} className="tester-card" style={{ border: activeTesterId === t.id ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)' }}>
+              <div className="tester-card-header">
+                <div className="tester-avatar">
+                  {t.name.charAt(0)}
+                </div>
+                <div className="tester-info">
+                  <h3>{t.name}</h3>
+                  <p>{t.age} ปี | {t.gender.split(' / ')[0]} | มือ{t.hand.split(' / ')[0]}</p>
+                </div>
+              </div>
+              <div className="tester-actions">
+                <button className="btn-select" onClick={() => handleSelectTester(t.id)}>
+                  เลือกทดสอบ (Select)
+                </button>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button className="btn-edit" onClick={() => alert('ฟังก์ชันแก้ไขกำลังอยู่ในระหว่างการพัฒนา')}>
+                    ✎ แก้ไข
+                  </button>
+                  <button className="btn-delete" onClick={() => handleDeleteTester(t.id)}>
+                    🗑 ลบ
+                  </button>
+                </div>
+              </div>
             </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>{t.authGender}</label>
-              <select value={regGender} onChange={e => setRegGender(e.target.value)} required style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'white', boxSizing: 'border-box' }}>
-                <option value="Male">{t.authMale}</option>
-                <option value="Female">{t.authFemale}</option>
-                <option value="Other">{t.authOther}</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>{t.authAge}</label>
-              <input type="number" min="1" value={regAge} onChange={e => setRegAge(e.target.value)} required style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', boxSizing: 'border-box' }} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>{t.authPassword}</label>
-              <input type="password" value={regPassword} onChange={e => setRegPassword(e.target.value)} required style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', boxSizing: 'border-box' }} />
-            </div>
-            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-              <button type="button" className="btn btn-outline" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setIsRegistering(false)}>
-                กลับ
-              </button>
-              <button type="submit" className="btn btn-teal" style={{ flex: 1, justifyContent: 'center' }}>
-                <Check size={16} /> บันทึก
-              </button>
-            </div>
-          </form>
+          ))
+        ) : (
+          <div style={{ gridColumn: '1 / -1', padding: '3rem', textAlign: 'center', background: 'white', borderRadius: '8px', border: '1px dashed var(--border-color)' }}>
+            <Users size={48} color="var(--text-muted)" style={{ margin: '0 auto 1rem' }} />
+            <p style={{ color: 'var(--text-secondary)' }}>ยังไม่มีข้อมูลผู้ทดสอบ คลิก 'เพิ่มทดสอบใหม่' เพื่อเริ่มต้น</p>
+          </div>
         )}
       </div>
+
+      {isAddingTester && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>เพิ่มผู้ทดสอบใหม่ (Add Tester)</h3>
+              <button className="modal-close" onClick={() => setIsAddingTester(false)}>✕</button>
+            </div>
+            <form onSubmit={handleAddTester}>
+              <div className="form-group">
+                <label>ชื่อ-นามสกุล (Name)</label>
+                <input type="text" className="form-control" value={testName} onChange={e => setTestName(e.target.value)} required />
+              </div>
+              
+              <div className="form-row">
+                <div className="form-group">
+                  <label>อายุ (Age)</label>
+                  <input type="number" min="1" className="form-control" value={testAge} onChange={e => setTestAge(e.target.value)} required />
+                </div>
+                <div className="form-group">
+                  <label>เพศ (Gender)</label>
+                  <select className="form-control" value={testGender} onChange={e => setTestGender(e.target.value)} required>
+                    <option value="ชาย / Male">ชาย / Male</option>
+                    <option value="หญิง / Female">หญิง / Female</option>
+                    <option value="อื่นๆ / Other">อื่นๆ / Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>น้ำหนัก (Weight) - kg</label>
+                  <input type="number" min="1" className="form-control" value={testWeight} onChange={e => setTestWeight(e.target.value)} required />
+                </div>
+                <div className="form-group">
+                  <label>ส่วนสูง (Height) - cm</label>
+                  <input type="number" min="1" className="form-control" value={testHeight} onChange={e => setTestHeight(e.target.value)} required />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>ข้างที่ทดสอบ (Testing Hand)</label>
+                <select className="form-control" value={testHand} onChange={e => setTestHand(e.target.value)} required>
+                  <option value="ขวา / Right">ขวา / Right</option>
+                  <option value="ซ้าย / Left">ซ้าย / Left</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' }}>
+                <button type="button" className="btn btn-outline" onClick={() => setIsAddingTester(false)}>ยกเลิก</button>
+                <button type="submit" className="btn btn-teal">บันทึก</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -1081,74 +1051,66 @@ function App() {
   );
   };
 
-  if (!currentUser) {
-    return (
-      <div className="app-container">
-        <header className="header-container">
-          <div className="header-top">
-            <div className="logo-area">
-              <div className="logo-icon">
-                <Activity size={24} />
-              </div>
-              <div className="logo-text">
-                <h1>{t.appTitle}</h1>
-                <div className="subtitle">{t.appSub}</div>
-              </div>
-            </div>
-            <button className="lang-toggle" onClick={() => setLang(lang === 'th' ? 'en' : 'th')}>
-              <Globe size={16} /> {lang === 'th' ? 'EN' : 'TH'}
-            </button>
-          </div>
-        </header>
-        <main>
-          {renderAuth()}
-        </main>
-      </div>
-    );
-  }
-
   return (
-    <div className="app-container">
-      <header className="header-container">
-        <div className="header-top">
+    <div className="app-layout">
+      <aside className="sidebar">
+        <div className="sidebar-header">
           <div className="logo-area">
             <div className="logo-icon">
               <Activity size={24} />
             </div>
             <div className="logo-text">
               <h1>{t.appTitle}</h1>
-              <div className="subtitle">{t.appSub}</div>
             </div>
-          </div>
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-main)', padding: '6px 12px', borderRadius: '20px' }}>
-              <User size={14} /> <span style={{ fontWeight: 500 }}>{currentUser.name}</span>
-            </div>
-            <button className="lang-toggle" onClick={() => setLang(lang === 'th' ? 'en' : 'th')}>
-              <Globe size={16} /> {lang === 'th' ? 'EN' : 'TH'}
-            </button>
-            <button className="lang-toggle" style={{ color: 'var(--accent-orange)' }} onClick={handleLogout} title={t.authLogout}>
-              <LogOut size={16} />
-            </button>
           </div>
         </div>
-        <nav className="nav-tabs">
-          <button className={`nav-tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-            <Activity size={18} /> {t.tabDashboard}
+
+        <div className="sidebar-status">
+          <p className="status-label">ผู้ทดสอบที่กำลังทดสอบ (Active)</p>
+          <h4 className="status-value">{activeTester ? activeTester.name : "ยังไม่ได้เลือก (None)"}</h4>
+          
+          <p className="status-label">สถานะอุปกรณ์</p>
+          <h4 className={`status-value ${isConnected ? 'text-teal' : 'text-red'}`}>
+            {isConnected ? 'เชื่อมต่อแล้ว' : t.notConnected}
+          </h4>
+        </div>
+
+        <nav className="sidebar-nav">
+          <button className={`nav-item ${activeTab === 'connect' ? 'active' : ''}`} onClick={() => setActiveTab('connect')}>
+            <SettingsIcon size={18} /> {t.tabConnect}
           </button>
-          <button className={`nav-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
-            <SlidersHorizontal size={18} /> {t.tabSettings}
+          <button className={`nav-item ${activeTab === 'testers' ? 'active' : ''}`} onClick={() => setActiveTab('testers')}>
+            <User size={18} /> {t.tabTesters}
           </button>
-          <button className={`nav-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
-            <History size={18} /> {t.tabHistory}
+          <button className={`nav-item ${activeTab === 'monitor' ? 'active' : ''}`} onClick={() => setActiveTab('monitor')}>
+            <Activity size={18} /> {t.tabMonitor}
+          </button>
+          <button className={`nav-item ${activeTab === 'training' ? 'active' : ''}`} onClick={() => setActiveTab('training')}>
+            <Zap size={18} /> {t.tabTraining}
+          </button>
+          <button className={`nav-item ${activeTab === 'compare' ? 'active' : ''}`} onClick={() => setActiveTab('compare')}>
+            <SlidersHorizontal size={18} /> {t.tabCompare}
+          </button>
+          <button className={`nav-item ${activeTab === 'analysis' ? 'active' : ''}`} onClick={() => setActiveTab('analysis')}>
+            <History size={18} /> {t.tabAnalysis}
           </button>
         </nav>
-      </header>
 
-      <main>
-        {activeTab === 'dashboard' && renderDashboard()}
-        {activeTab === 'history' && renderHistory()}
+        <div style={{ padding: '1rem', borderTop: '1px solid var(--border-light)', marginTop: 'auto' }}>
+           <button className="lang-toggle" style={{ width: '100%', justifyContent: 'center', marginBottom: '0.5rem' }} onClick={() => setLang(lang === 'th' ? 'en' : 'th')}>
+              <Globe size={16} /> {lang === 'th' ? 'Switch to English' : 'เปลี่ยนเป็นภาษาไทย'}
+            </button>
+            <button className="lang-toggle" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setActiveTab('settings')}>
+              <SettingsIcon size={16} /> {lang === 'th' ? 'ตั้งค่า (Settings)' : 'Settings'}
+            </button>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        {['connect', 'monitor', 'training', 'compare', 'dashboard'].includes(activeTab) && renderDashboard()}
+        {['analysis', 'history'].includes(activeTab) && renderHistory()}
         {activeTab === 'settings' && renderSettings()}
+        {activeTab === 'testers' && renderTesterRepository()}
       </main>
     </div>
   );
