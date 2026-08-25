@@ -1,76 +1,161 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Activity, Settings, Play, Square, Bluetooth, BluetoothConnected, History, Home, Globe } from 'lucide-react';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, BarChart, Bar 
+} from 'recharts';
+import { 
+  Activity, Settings as SettingsIcon, Play, Square, Bluetooth, BluetoothConnected, 
+  History, Globe, Zap, Hand, Clock, BarChart2, Target, SlidersHorizontal, RefreshCw
+} from 'lucide-react';
 import './index.css';
 
 const i18n = {
   th: {
-    appTitle: "EMG Signal Monitor",
-    tabDashboard: "แดชบอร์ด",
-    tabHistory: "ประวัติการฝึก",
+    appTitle: "EMG Grip Therapy",
+    appSub: "Medical Technology · Rehabilitation",
+    tabDashboard: "หน้าแรก",
+    tabHistory: "ประวัติ",
     tabSettings: "ตั้งค่า",
-    connect: "เชื่อมต่ออุปกรณ์",
-    disconnect: "ตัดการเชื่อมต่อ",
-    start: "เริ่มเซสชัน",
-    stop: "หยุดซ้อม",
-    liveSignal: "สัญญาณเรียลไทม์",
-    acCoupled: "AC-Coupled",
-    vmax: "Vmax (สูงสุด)",
-    vmin: "Vmin (ต่ำสุด)",
-    vpp: "Vp-p (กว้าง)",
-    frequency: "ความถี่",
-    period: "รอบเวลา",
-    topPeak: "จุดยอดคลื่น",
-    bottomTrough: "จุดท้องคลื่น",
-    peakToPeak: "ความกว้างรวม",
-    gripCount: "จำนวนกำมือ",
-    totalGrips: "ครั้ง",
-    trainingSession: "โหมดฝึกซ้อม",
-    timeRemaining: "เวลาที่เหลือ",
-    presets: "เวลาด่วน:",
+    notConnected: "ยังไม่เชื่อมต่อ",
+    deviceSub: "อุปกรณ์ EMG ผ่าน BLE (HM-10)",
+    connectBtn: "เชื่อมต่อ Bluetooth",
+    disconnectBtn: "ยกเลิกการเชื่อมต่อ",
+    emgVal: "ค่า EMG",
+    emgSub: "mV Vpp · Raw ADC: 0",
+    gripVal: "กำมือ",
+    gripSub: "ครั้ง",
+    timeVal: "เวลาคงเหลือ",
+    timeSub: "MM:SS",
+    statusVal: "สถานะ",
+    statusSub: "- BLE",
+    statusReady: "พร้อมใช้งาน",
+    statusWait: "รอเชื่อมต่อ",
+    statusTraining: "กำลังฝึก",
+    chartTitle: "EMG · Standby",
+    chartY: "แรงดันสัญญาณ EMG (mV)",
+    stopAt: "หยุดทำ",
+    startAt: "เริ่มทำ",
+    timeBottom: "Time",
+    controlTitle: "ควบคุมการฝึก",
+    controlSub: "ตั้งเวลาและเริ่ม/หยุดเซสชัน",
+    calibTitle: "คาลิเบรต threshold",
+    calibSub: "วางมือพัก 3 วิ แล้วกด →",
+    calibBtn: "Calibrate",
+    startBtn: "เริ่มฝึก",
+    stopBtn: "หยุดฝึก",
+    resetBtn: "รีเซ็ต",
+    connectPrompt: "กรุณาเชื่อมต่ออุปกรณ์ก่อน",
+    
+    // Settings
+    setMainTitle: "ตั้งค่าการตรวจจับ",
+    setMainSub: "ปรับเกณฑ์ความไวและระยะเวลาฝึกให้เหมาะกับผู้ใช้",
+    setAdaptTitle: "Adaptive Threshold",
+    setAdaptSub: "คำนวณ threshold จาก baseline EMG ขณะพัก ปรับได้ตามผิวและตำแหน่งอิเล็กโทรด",
+    setAdaptNotCalib: "ยังไม่ได้คาลิเบรต",
+    setAdaptNotCalibSub: "กดปุ่ม Calibrate ในหน้าหลัก แล้ววางมือพัก 3 วินาที",
+    setTrigMult: "triggerMultiplier (baseline × นี้ = trigger)",
+    setTrigDesc: "เลือก 1.25 จากการทดลอง: noise ceiling ≈ 1.1×, grip ปกติพุ่งสูง ≥ 1.4× → จุดตัดปลอดภัยที่ 1.25×",
+    setRelMult: "releaseMultiplier (baseline × นี้ = release)",
+    setRelDesc: "ต้องน้อยกว่า triggerMultiplier — ช่วยป้องกัน re-trigger ทันทีหลังปล่อยมือ",
+    setGripTitle: "เกณฑ์การตรวจจับกำมือ",
+    setGripSub: "กำหนดค่าสัญญาณ EMG ที่ถือว่าเริ่มกำมือและหยุดกำมือ",
+    setStartGrip: "เริ่มกำมือที่ค่า (mV)",
+    setStopGrip: "หยุดกำมือที่ค่า (mV)",
+    setTimeTitle: "ระยะเวลาฝึกเริ่มต้น",
+    setTimeSub: "ระยะเวลานี้จะถูกใช้ทุกครั้งที่เริ่มฝึกในหน้าแรก",
+    setTargetTitle: "จำนวนครั้งเป้าหมาย",
+    setTargetSub: "ตั้งจำนวนครั้งที่ต้องการกำมือให้ครบในแต่ละเซสชัน",
+    custom: "กำหนดเอง",
+    resetDefault: "คืนค่าเริ่มต้น",
+    
+    // History
+    histMainTitle: "ประวัติการฝึก",
+    histMainSub: "ดูและวิเคราะห์ประวัติการฝึกกำมือย้อนหลัง",
+    histStatTitle: "สถิติการกำมือ",
+    histStatSub: "เฉลี่ย 0 ครั้ง/วัน",
+    week: "สัปดาห์",
+    month: "เดือน",
+    noData: "ยังไม่มีข้อมูลในช่วงเวลานี้",
     noHistory: "ยังไม่มีประวัติการฝึก",
-    date: "วันที่",
-    duration: "เวลาฝึก",
-    peakVpp: "ค่า Vp-p สูงสุด",
-    settingsGripTitle: "เกณฑ์การกำมือ (Grip Threshold)",
-    settingsGripDesc: "ระดับโวลต์ที่จะนับว่ากำมือ (เส้นสีส้ม)",
-    settingsBaseTitle: "เกณฑ์พัก (Resting Baseline)",
-    settingsBaseDesc: "ระดับโวลต์ที่จะนับว่าคลายมือแล้ว (เส้นสีเขียว)",
-    customMin: "นาที",
+    colDate: "วันที่และเวลา",
+    colSetTime: "ตั้งเวลา",
+    colRealTime: "เวลาจริง",
+    colGrip: "กำมือ (ครั้ง)",
+    colEMG: "EMG (mV)",
+    colAvg: "เฉลี่ย (วิ)"
   },
   en: {
-    appTitle: "EMG Signal Monitor",
+    appTitle: "EMG Grip Therapy",
+    appSub: "Medical Technology · Rehabilitation",
     tabDashboard: "Dashboard",
     tabHistory: "History",
     tabSettings: "Settings",
-    connect: "Connect Device",
-    disconnect: "Disconnect",
-    start: "Start Session",
-    stop: "Stop",
-    liveSignal: "REAL-TIME SIGNAL",
-    acCoupled: "AC-Coupled",
-    vmax: "Vmax (Max)",
-    vmin: "Vmin (Min)",
-    vpp: "Vp-p (Amp)",
-    frequency: "Frequency",
-    period: "Period",
-    topPeak: "Top Peak",
-    bottomTrough: "Bottom Trough",
-    peakToPeak: "Peak to Peak",
-    gripCount: "Grip Count",
-    totalGrips: "grips",
-    trainingSession: "Training Session",
-    timeRemaining: "Time Remaining",
-    presets: "Presets:",
-    noHistory: "No training history yet",
-    date: "Date",
-    duration: "Duration",
-    peakVpp: "Peak Vp-p",
-    settingsGripTitle: "Grip Threshold",
-    settingsGripDesc: "Voltage level to count as a grip (Orange line)",
-    settingsBaseTitle: "Resting Baseline",
-    settingsBaseDesc: "Voltage level to count as released (Green line)",
-    customMin: "mins",
+    notConnected: "Not Connected",
+    deviceSub: "EMG device via BLE (HM-10)",
+    connectBtn: "Connect Bluetooth",
+    disconnectBtn: "Disconnect",
+    emgVal: "EMG Value",
+    emgSub: "mV Vpp · Raw ADC: 0",
+    gripVal: "Grips",
+    gripSub: "count",
+    timeVal: "Time Left",
+    timeSub: "MM:SS",
+    statusVal: "Status",
+    statusSub: "- BLE",
+    statusReady: "Ready",
+    statusWait: "Waiting",
+    statusTraining: "Training",
+    chartTitle: "EMG · Standby",
+    chartY: "EMG Signal (mV)",
+    stopAt: "Stop at",
+    startAt: "Start at",
+    timeBottom: "Time",
+    controlTitle: "Session Control",
+    controlSub: "Set time and start/stop session",
+    calibTitle: "Calibrate threshold",
+    calibSub: "Rest hand for 3s then press →",
+    calibBtn: "Calibrate",
+    startBtn: "Start",
+    stopBtn: "Stop",
+    resetBtn: "Reset",
+    connectPrompt: "Please connect a device first",
+    
+    // Settings
+    setMainTitle: "Detection Settings",
+    setMainSub: "Adjust sensitivity and training duration",
+    setAdaptTitle: "Adaptive Threshold",
+    setAdaptSub: "Calculate threshold from resting baseline EMG",
+    setAdaptNotCalib: "Not calibrated yet",
+    setAdaptNotCalibSub: "Press Calibrate on dashboard and rest hand for 3 seconds",
+    setTrigMult: "triggerMultiplier (baseline × this = trigger)",
+    setTrigDesc: "1.25 recommended for stable triggering",
+    setRelMult: "releaseMultiplier (baseline × this = release)",
+    setRelDesc: "Must be lower than triggerMultiplier",
+    setGripTitle: "Grip Detection Threshold",
+    setGripSub: "EMG voltage to start/stop counting a grip",
+    setStartGrip: "Start grip at (mV)",
+    setStopGrip: "Stop grip at (mV)",
+    setTimeTitle: "Initial Training Time",
+    setTimeSub: "Default time for new sessions",
+    setTargetTitle: "Target Grips",
+    setTargetSub: "Target grip count per session",
+    custom: "Custom",
+    resetDefault: "Reset Defaults",
+    
+    // History
+    histMainTitle: "Training History",
+    histMainSub: "View and analyze past training sessions",
+    histStatTitle: "Grip Statistics",
+    histStatSub: "Average 0 grips/day",
+    week: "Week",
+    month: "Month",
+    noData: "No data in this period",
+    noHistory: "No training history",
+    colDate: "Date & Time",
+    colSetTime: "Set Time",
+    colRealTime: "Actual Time",
+    colGrip: "Grips",
+    colEMG: "EMG (mV)",
+    colAvg: "Avg (s)"
   }
 };
 
@@ -79,53 +164,57 @@ function App() {
   const t = i18n[lang];
   const [activeTab, setActiveTab] = useState('dashboard');
 
+  // Bluetooth State
   const [isConnected, setIsConnected] = useState(false);
   const [device, setDevice] = useState(null);
   const [characteristic, setCharacteristic] = useState(null);
-  const [errorMsg, setErrorMsg] = useState("");
 
-  const [emgData, setEmgData] = useState(Array.from({ length: 200 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
-  const [currentValue, setCurrentValue] = useState(0);
-  const timeRef = useRef(200);
+  // EMG Data
+  const [emgData, setEmgData] = useState(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
+  const [currentVpp, setCurrentVpp] = useState(0);
+  const [rawAdc, setRawAdc] = useState(0);
+  const timeRef = useRef(150);
   const bufferRef = useRef("");
   const filterRef = useRef({ prevX: null, prevY: 0 });
 
-  // Settings
-  const [gripThreshold, setGripThreshold] = useState(() => parseFloat(localStorage.getItem('emgGripThreshold')) || 1.0);
-  const [restingBaseline, setRestingBaseline] = useState(() => parseFloat(localStorage.getItem('emgRestingBaseline')) || 0.2);
+  // Settings State
+  const [triggerMult, setTriggerMult] = useState(1.25);
+  const [releaseMult, setReleaseMult] = useState(1.12);
+  const [startGripMv, setStartGripMv] = useState(978.0);
+  const [stopGripMv, setStopGripMv] = useState(880.0);
+  const [sessionTimePreset, setSessionTimePreset] = useState(5); // minutes
+  const [targetGrips, setTargetGrips] = useState(20);
 
-  // History
-  const [historyLogs, setHistoryLogs] = useState(() => JSON.parse(localStorage.getItem('emgHistory')) || []);
-
-  // Timer Session
-  const [sessionPreset, setSessionPreset] = useState(60);
-  const [timeLeft, setTimeLeft] = useState(60);
+  // Session State
+  const [timeLeft, setTimeLeft] = useState(sessionTimePreset * 60);
   const [isSessionActive, setIsSessionActive] = useState(false);
-  
-  // Grip State for UI
   const [gripCount, setGripCount] = useState(0);
   
-  // Refs for inside event listener
+  // History
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [histPeriod, setHistPeriod] = useState('week');
+
   const sessionRef = useRef({ 
     isActive: false, 
-    threshold: 1.0, 
-    baseline: 0.2,
+    startMv: 978.0, 
+    stopMv: 880.0,
     isGripping: false,
     gripCount: 0,
-    maxVoltage: 0,
-    minVoltage: 0
   });
 
   useEffect(() => {
     sessionRef.current.isActive = isSessionActive;
-    sessionRef.current.threshold = gripThreshold;
-    sessionRef.current.baseline = restingBaseline;
-  }, [isSessionActive, gripThreshold, restingBaseline]);
+    sessionRef.current.startMv = startGripMv;
+    sessionRef.current.stopMv = stopGripMv;
+  }, [isSessionActive, startGripMv, stopGripMv]);
+
+  useEffect(() => {
+    setTimeLeft(sessionTimePreset * 60);
+  }, [sessionTimePreset]);
 
   const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
   const CHARACTERISTIC_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
 
-  // Timer Countdown Logic
   useEffect(() => {
     let interval;
     if (isSessionActive && timeLeft > 0) {
@@ -145,43 +234,32 @@ function App() {
   };
 
   const handleStartSession = () => {
+    if (!isConnected) return;
     setGripCount(0);
     sessionRef.current.gripCount = 0;
     sessionRef.current.isGripping = false;
-    sessionRef.current.maxVoltage = 0;
-    sessionRef.current.minVoltage = 0;
-    setTimeLeft(sessionPreset);
+    setTimeLeft(sessionTimePreset * 60);
     setIsSessionActive(true);
+  };
+
+  const handleStopSession = () => {
+    setIsSessionActive(false);
+  };
+
+  const handleResetSession = () => {
+    setIsSessionActive(false);
+    setGripCount(0);
+    setTimeLeft(sessionTimePreset * 60);
+    setEmgData(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
+    setCurrentVpp(0);
   };
 
   const finishSession = () => {
     setIsSessionActive(false);
-    const finalGrips = sessionRef.current.gripCount;
-    const finalVpp = (sessionRef.current.maxVoltage - sessionRef.current.minVoltage).toFixed(2);
-    
-    if (finalGrips > 0 || sessionPreset - timeLeft > 5) {
-      const newLog = {
-        date: new Date().toISOString(),
-        duration: sessionPreset - timeLeft,
-        grips: finalGrips,
-        peakVpp: finalVpp
-      };
-      const updatedHistory = [newLog, ...historyLogs];
-      setHistoryLogs(updatedHistory);
-      localStorage.setItem('emgHistory', JSON.stringify(updatedHistory));
-    }
-    setTimeLeft(sessionPreset);
-  };
-
-  const saveSettings = (newThreshold, newBaseline) => {
-    setGripThreshold(newThreshold);
-    setRestingBaseline(newBaseline);
-    localStorage.setItem('emgGripThreshold', newThreshold);
-    localStorage.setItem('emgRestingBaseline', newBaseline);
+    // Add to history logic would go here
   };
 
   const handleConnect = async () => {
-    setErrorMsg("");
     if (isConnected && device) {
       if (device.gatt.connected) device.gatt.disconnect();
       setIsConnected(false);
@@ -204,22 +282,15 @@ function App() {
         setIsSessionActive(false);
         setDevice(null);
         setCharacteristic(null);
-        bufferRef.current = "";
-        filterRef.current = { prevX: null, prevY: 0 };
       });
 
-      try {
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        const char = await service.getCharacteristic(CHARACTERISTIC_UUID);
-        setCharacteristic(char);
-      } catch (e) {
-        setErrorMsg("Connected, but could not find the specific EMG UUIDs.");
-      }
-
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      const char = await service.getCharacteristic(CHARACTERISTIC_UUID);
+      setCharacteristic(char);
       setDevice(btDevice);
       setIsConnected(true);
     } catch (error) {
-      setErrorMsg(error.message);
+      console.error(error);
     }
   };
 
@@ -235,38 +306,32 @@ function App() {
       let lines = bufferRef.current.split('\n');
       bufferRef.current = lines.pop(); 
       
-      let latestValue = null;
       let newPoints = [];
       let newGripCount = sessionRef.current.gripCount;
+      let lastRaw = 0;
+      let maxV = 0, minV = 5000;
 
       for (let line of lines) {
         line = line.trim();
         if (line !== "" && !isNaN(line)) {
-          const rawVal = parseFloat(line);
+          const rawVal = parseFloat(line); // Assuming ADC 0-1023
+          lastRaw = rawVal;
           
-          if (filterRef.current.prevX === null) {
-            filterRef.current.prevX = rawVal;
-            filterRef.current.prevY = 0;
-          }
+          // Map to mV assuming 0-3300mV or similar. The mockups show values around 500-1000mV.
+          // Let's just scale it directly for the demo visualization
+          const mvVal = (rawVal / 1023) * 3300; 
           
-          const R = 0.99;
-          const y = rawVal - filterRef.current.prevX + R * filterRef.current.prevY;
-          filterRef.current.prevX = rawVal;
-          filterRef.current.prevY = y;
-          
-          const voltage = (y / 1023) * 5.0;
-          latestValue = voltage;
-          newPoints.push({ time: timeRef.current++, value: voltage, raw: rawVal });
+          if (mvVal > maxV) maxV = mvVal;
+          if (mvVal < minV) minV = mvVal;
+
+          newPoints.push({ time: timeRef.current++, value: mvVal, raw: rawVal });
 
           if (sessionRef.current.isActive) {
-             if (voltage > sessionRef.current.maxVoltage) sessionRef.current.maxVoltage = voltage;
-             if (voltage < sessionRef.current.minVoltage) sessionRef.current.minVoltage = voltage;
-
-             if (!sessionRef.current.isGripping && voltage >= sessionRef.current.threshold) {
+             if (!sessionRef.current.isGripping && mvVal >= sessionRef.current.startMv) {
                sessionRef.current.isGripping = true;
                newGripCount++;
                sessionRef.current.gripCount = newGripCount;
-             } else if (sessionRef.current.isGripping && voltage <= sessionRef.current.baseline) {
+             } else if (sessionRef.current.isGripping && mvVal <= sessionRef.current.stopMv) {
                sessionRef.current.isGripping = false;
              }
           }
@@ -274,12 +339,15 @@ function App() {
       }
 
       if (newPoints.length > 0) {
-        if (latestValue !== null) setCurrentValue(latestValue);
+        setRawAdc(lastRaw);
+        if (maxV !== 0 && minV !== 5000) {
+           setCurrentVpp((maxV - minV)/2); // Just an approximation for display
+        }
         if (sessionRef.current.isActive && newGripCount !== gripCount) setGripCount(newGripCount);
         
         setEmgData(prevData => {
           const combined = [...prevData, ...newPoints];
-          return combined.slice(-200);
+          return combined.slice(-150);
         });
       }
     };
@@ -292,256 +360,336 @@ function App() {
     };
   }, [characteristic]);
 
-  const renderDashboard = () => {
-    const activeData = emgData.filter(d => d.time >= 200);
-    let vmin = 0, vmax = 0, vpp = 0, freq = 0, period = 0;
-    if (activeData.length > 20) {
-      let sortedRaw = activeData.map(d => d.raw).sort((a,b) => a-b);
-      vmin = (sortedRaw[Math.floor(sortedRaw.length * 0.05)] / 1023) * 5.0;
-      vmax = (sortedRaw[Math.floor(sortedRaw.length * 0.95)] / 1023) * 5.0;
-      vpp = vmax - vmin;
-
-      let zeroCrossings = [];
-      for (let i = 1; i < activeData.length; i++) {
-        if (activeData[i-1].value < 0 && activeData[i].value >= 0) zeroCrossings.push(activeData[i].time);
-      }
-      if (zeroCrossings.length >= 2) {
-        let totalPeriod = 0;
-        for (let i = 1; i < zeroCrossings.length; i++) totalPeriod += (zeroCrossings[i] - zeroCrossings[i-1]);
-        period = (totalPeriod / (zeroCrossings.length - 1)) * 0.05; 
-        freq = 1 / period;
-      }
-    }
-
-    return (
-      <div className="dashboard-grid">
-        <section className="card col-span-8">
-          <div className="card-title">
-            <Activity size={24} />
-            <h2>{t.appTitle}</h2>
+  const renderDashboard = () => (
+    <div className="dashboard-grid">
+      {/* Banner */}
+      <div className="card banner-card col-span-12">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className={`metric-icon ${isConnected ? 'teal' : 'gray'}`}>
+            <Bluetooth size={20} />
           </div>
-          <div className="chart-container">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={emgData} margin={{ top: 20, right: 30, left: 10, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false} />
-                <XAxis 
-                  dataKey="time" 
-                  tickFormatter={(val) => (val / 20).toFixed(1)} 
-                  label={{ value: 'Time (s)', position: 'insideBottom', offset: -10, fill: 'var(--text-secondary)' }} 
-                  stroke="rgba(0,0,0,0.3)"
-                  tick={{ fill: 'var(--text-secondary)' }}
-                  minTickGap={40}
-                />
-                <YAxis 
-                  domain={['auto', 'auto']} 
-                  label={{ value: 'Voltage (V)', angle: -90, position: 'insideLeft', offset: -5, fill: 'var(--text-secondary)' }} 
-                  stroke="rgba(0,0,0,0.3)"
-                  tick={{ fill: 'var(--text-secondary)' }}
-                  tickFormatter={(val) => val.toFixed(1)}
-                />
-                <ReferenceLine y={gripThreshold} stroke="orange" strokeDasharray="4 4" label={{ position: 'insideTopLeft', value: `Threshold (${gripThreshold}V)`, fill: 'orange' }} />
-                <ReferenceLine y={restingBaseline} stroke="green" strokeDasharray="4 4" label={{ position: 'insideBottomLeft', value: `Baseline (${restingBaseline}V)`, fill: 'green' }} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
-                  itemStyle={{ color: 'var(--accent-blue)' }}
-                  labelStyle={{ display: 'none' }}
-                />
-                <Line type="monotone" dataKey="value" stroke="var(--accent-blue)" strokeWidth={3} dot={false} isAnimationActive={false} />
-              </LineChart>
-            </ResponsiveContainer>
+          <div>
+            <h3 style={{ fontSize: '1rem', color: isConnected ? 'var(--accent-teal)' : 'var(--text-primary)' }}>
+              {isConnected ? 'เชื่อมต่อแล้ว' : t.notConnected}
+            </h3>
+            <div className="subtitle">{t.deviceSub}</div>
           </div>
-        </section>
-
-        <section className="card col-span-4" style={{ display: 'flex', flexDirection: 'column' }}>
-          <div className="card-title">
-            <Bluetooth size={24} />
-            <h2>{t.liveSignal}</h2>
-          </div>
-          
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '1rem 0' }}>
-            <div style={{ fontSize: '3.5rem', fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', margin: '0.5rem 0' }}>
-              {currentValue > 0 ? '+' : ''}{currentValue.toFixed(2)} <span style={{ fontSize: '1.5rem', color: 'var(--text-secondary)' }}>V</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-blue)', fontSize: '0.85rem', fontWeight: 500, background: 'rgba(2, 132, 199, 0.1)', padding: '4px 12px', borderRadius: '12px', whiteSpace: 'nowrap' }}>
-              <div className="status-dot" style={{ background: 'var(--accent-blue)', flexShrink: 0 }}></div>
-              {t.acCoupled}
-            </div>
-          </div>
-
-          <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '1rem' }}>{t.trainingSession}</div>
-            
-            {!isSessionActive ? (
-              <div className="timer-presets">
-                {[60, 180, 300, 600].map(secs => (
-                  <button 
-                    key={secs} 
-                    className={`preset-btn ${sessionPreset === secs ? 'active' : ''}`}
-                    onClick={() => setSessionPreset(secs)}
-                  >
-                    {secs / 60}m
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div style={{ fontSize: '2rem', fontWeight: 700, textAlign: 'center', marginBottom: '1rem', color: 'var(--accent-green)' }}>
-                {formatTime(timeLeft)}
-              </div>
-            )}
-
-            <div className="control-grid">
-              <button className={`btn ${isConnected ? 'btn-secondary' : 'btn-primary'}`} onClick={handleConnect}>
-                {isConnected ? <BluetoothConnected size={18} /> : <Bluetooth size={18} />}
-                {isConnected ? t.disconnect : t.connect}
-              </button>
-              
-              <button 
-                className={`btn ${isSessionActive ? 'btn-danger' : 'btn-primary'}`}
-                onClick={isSessionActive ? finishSession : handleStartSession}
-                disabled={!isConnected}
-              >
-                {isSessionActive ? <Square size={18} /> : <Play size={18} />}
-                {isSessionActive ? t.stop : t.start}
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="card col-span-3">
-          <h3 className="stat-label">{t.vmax}</h3>
-          <div className="stat-value">{vmax.toFixed(2)} <span className="stat-label" style={{ fontSize: '1rem' }}>V</span></div>
-          <div className="stat-trend" style={{ color: 'var(--text-secondary)' }}>
-            <Activity size={14} style={{ marginRight: '4px' }}/> {t.topPeak}
-          </div>
-        </section>
-
-        <section className="card col-span-3">
-          <h3 className="stat-label">{t.vmin}</h3>
-          <div className="stat-value">{vmin.toFixed(2)} <span className="stat-label" style={{ fontSize: '1rem' }}>V</span></div>
-          <div className="stat-trend trend-down">
-            {t.bottomTrough}
-          </div>
-        </section>
-
-        <section className="card col-span-3">
-          <h3 className="stat-label">{t.vpp}</h3>
-          <div className="stat-value">{vpp.toFixed(2)} <span className="stat-label" style={{ fontSize: '1rem' }}>V</span></div>
-          <div className="stat-trend" style={{ color: 'var(--accent-blue)' }}>
-            {t.peakToPeak}
-          </div>
-        </section>
-
-        <section className="card col-span-3" style={{ background: isSessionActive ? 'rgba(34, 197, 94, 0.05)' : '', borderColor: isSessionActive ? 'var(--accent-green)' : '' }}>
-          <h3 className="stat-label" style={{ color: isSessionActive ? 'var(--accent-green)' : '' }}>{t.gripCount}</h3>
-          <div className="stat-value" style={{ color: isSessionActive ? 'var(--accent-green)' : '' }}>
-            {gripCount} <span className="stat-label" style={{ fontSize: '1rem' }}>{t.totalGrips}</span>
-          </div>
-          <div className="stat-trend" style={{ color: 'var(--text-secondary)' }}>
-            {t.frequency}: {freq > 0 ? freq.toFixed(1) : '-'} Hz
-          </div>
-        </section>
-      </div>
-    );
-  };
-
-  const renderHistory = () => (
-    <div className="history-container">
-      <div className="card-title" style={{ marginBottom: '2rem' }}>
-        <History size={24} />
-        <h2>{t.tabHistory}</h2>
-      </div>
-      
-      {historyLogs.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-          {t.noHistory}
         </div>
-      ) : (
-        <table className="history-table">
-          <thead>
-            <tr>
-              <th>{t.date}</th>
-              <th>{t.duration}</th>
-              <th>{t.gripCount}</th>
-              <th>{t.peakVpp}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {historyLogs.map((log, i) => (
-              <tr key={i}>
-                <td>{new Date(log.date).toLocaleString(lang === 'th' ? 'th-TH' : 'en-US')}</td>
-                <td>{formatTime(log.duration)}</td>
-                <td style={{ fontWeight: 600, color: 'var(--accent-green)' }}>{log.grips}</td>
-                <td>{log.peakVpp} V</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+        <button 
+          className={`btn ${isConnected ? 'btn-outline' : 'btn-teal'}`} 
+          onClick={handleConnect}
+          style={{ borderRadius: '24px' }}
+        >
+          {isConnected ? t.disconnectBtn : t.connectBtn}
+        </button>
+      </div>
+
+      {/* Metrics Row */}
+      <div className="card metric-card col-span-3">
+        <div className="metric-header"><Zap size={16} /> {t.emgVal}</div>
+        <div className="metric-value teal">{currentVpp.toFixed(1)}</div>
+        <div className="metric-sub">{t.emgSub.replace('0', rawAdc.toFixed(0))}</div>
+      </div>
+      <div className="card metric-card col-span-3">
+        <div className="metric-header"><Hand size={16} /> {t.gripVal}</div>
+        <div className="metric-value teal">{gripCount}</div>
+        <div className="metric-sub">{t.gripSub}</div>
+      </div>
+      <div className="card metric-card col-span-3">
+        <div className="metric-header"><Clock size={16} /> {t.timeVal}</div>
+        <div className="metric-value">{formatTime(timeLeft)}</div>
+        <div className="metric-sub">{t.timeSub}</div>
+      </div>
+      <div className="card metric-card col-span-3">
+        <div className="metric-header"><BarChart2 size={16} /> {t.statusVal}</div>
+        <div className="metric-value" style={{ fontSize: '1.5rem', display: 'flex', alignItems: 'center', height: '100%' }}>
+          {isSessionActive ? t.statusTraining : (isConnected ? t.statusReady : t.statusWait)}
+        </div>
+        <div className="metric-sub">{t.statusSub}</div>
+      </div>
+
+      {/* Chart */}
+      <div className="card col-span-8" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 600 }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isConnected ? 'var(--accent-teal)' : '#CBD5E1' }} />
+            {t.chartTitle}
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t.chartY}</div>
+        </div>
+        <div className="chart-container">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+              <XAxis dataKey="time" hide />
+              <YAxis domain={[-2500, 2500]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              
+              <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+                label={{ position: 'right', value: `${t.startAt} ${startGripMv} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
+              <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+                label={{ position: 'right', value: `${t.stopAt} ${stopGripMv} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
+                
+              <Line type="monotone" dataKey="value" stroke="var(--text-primary)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-light)', textAlign: 'center' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Grips</div>
+            <div style={{ fontWeight: 600, color: 'var(--accent-teal)' }}>{gripCount}</div>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>EMG mV</div>
+            <div style={{ fontWeight: 600 }}>{currentVpp.toFixed(1)} mV Vpp</div>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.timeBottom}</div>
+            <div style={{ fontWeight: 600 }}>{formatTime(sessionTimePreset * 60 - timeLeft)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="card control-card col-span-4">
+        <div className="control-header">
+          <Clock size={18} /> {t.controlTitle}
+        </div>
+        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>{t.controlSub}</div>
+        
+        <div className="timer-select">
+          <span>{sessionTimePreset} นาที</span>
+          <SettingsIcon size={16} color="var(--accent-teal)" />
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--border-light)', margin: '1rem 0' }}></div>
+        
+        <div style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>{t.calibTitle}</div>
+        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>{t.calibSub}</div>
+        
+        <button className="btn btn-purple" style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+          <Target size={16} /> {t.calibBtn}
+        </button>
+
+        <div className="action-grid">
+          <button className="action-btn" onClick={handleStartSession} style={{ color: isSessionActive ? 'var(--text-muted)' : 'var(--accent-teal)', borderColor: isSessionActive ? 'var(--border-color)' : 'var(--accent-teal)', background: isSessionActive ? 'var(--bg-main)' : 'rgba(0,188,163,0.05)' }}>
+            <Play size={20} />
+            {t.startBtn}
+          </button>
+          <button className="action-btn" onClick={handleStopSession} style={{ color: !isSessionActive ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+            <Square size={20} />
+            {t.stopBtn}
+          </button>
+          <button className="action-btn" onClick={handleResetSession}>
+            <RefreshCw size={20} />
+            {t.resetBtn}
+          </button>
+        </div>
+
+        {!isConnected && (
+          <div className="connect-prompt">
+            {t.connectPrompt}
+          </div>
+        )}
+      </div>
     </div>
   );
 
   const renderSettings = () => (
-    <div className="settings-container">
-      <div className="card-title" style={{ marginBottom: '2rem' }}>
-        <Settings size={24} />
-        <h2>{t.tabSettings}</h2>
+    <div>
+      <div className="page-title">
+        <h2>{t.setMainTitle}</h2>
+        <p>{t.setMainSub}</p>
+      </div>
+      
+      <div className="settings-grid">
+        <div className="card setting-card">
+          <div className="setting-icon"><Target size={20} /></div>
+          <div style={{ flex: 1 }}>
+            <h3 style={{ fontSize: '1rem' }}>{t.setAdaptTitle}</h3>
+            <p className="subtitle">{t.setAdaptSub}</p>
+            
+            <div style={{ background: 'var(--bg-main)', padding: '1rem', borderRadius: '8px', marginTop: '1rem', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 500 }}>{t.setAdaptNotCalib}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.setAdaptNotCalibSub}</div>
+            </div>
+
+            <div className="slider-group">
+              <div className="slider-col">
+                <div className="slider-label teal">
+                  <span>{t.setTrigMult}</span>
+                  <span style={{ background: 'white', padding: '2px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>{triggerMult.toFixed(2)}</span>
+                </div>
+                <input type="range" className="range-slider" min="1.0" max="2.0" step="0.01" value={triggerMult} onChange={e => setTriggerMult(parseFloat(e.target.value))} />
+                <div className="slider-sub">{t.setTrigDesc}</div>
+              </div>
+              <div className="slider-col">
+                <div className="slider-label orange">
+                  <span>{t.setRelMult}</span>
+                  <span style={{ background: 'white', padding: '2px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>{releaseMult.toFixed(2)}</span>
+                </div>
+                <input type="range" className="range-slider orange" min="1.0" max="2.0" step="0.01" value={releaseMult} onChange={e => setReleaseMult(parseFloat(e.target.value))} />
+                <div className="slider-sub">{t.setRelDesc}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="card setting-card">
+          <div className="setting-icon"><SlidersHorizontal size={20} /></div>
+          <div style={{ flex: 1 }}>
+            <h3 style={{ fontSize: '1rem' }}>{t.setGripTitle}</h3>
+            <p className="subtitle">{t.setGripSub}</p>
+
+            <div className="slider-group">
+              <div className="slider-col">
+                <div className="slider-label teal">
+                  <span>{t.setStartGrip}</span>
+                  <span style={{ background: 'white', padding: '2px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>{startGripMv.toFixed(1)}</span>
+                </div>
+                <input type="range" className="range-slider" min="0" max="2500" step="10" value={startGripMv} onChange={e => setStartGripMv(parseFloat(e.target.value))} />
+              </div>
+              <div className="slider-col">
+                <div className="slider-label orange">
+                  <span>{t.setStopGrip}</span>
+                  <span style={{ background: 'white', padding: '2px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>{stopGripMv.toFixed(1)}</span>
+                </div>
+                <input type="range" className="range-slider orange" min="0" max="2500" step="10" value={stopGripMv} onChange={e => setStopGripMv(parseFloat(e.target.value))} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="card setting-card">
+          <div className="setting-icon"><Clock size={20} /></div>
+          <div style={{ flex: 1 }}>
+            <h3 style={{ fontSize: '1rem' }}>{t.setTimeTitle}</h3>
+            <p className="subtitle">{t.setTimeSub}</p>
+            <div className="preset-pills">
+              {[1, 3, 5, 10].map(m => (
+                <button key={m} className={`pill ${sessionTimePreset === m ? 'active' : ''}`} onClick={() => setSessionTimePreset(m)}>
+                  {m} นาที
+                </button>
+              ))}
+              <button className="pill">{t.custom}</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="card setting-card">
+          <div className="setting-icon"><Hand size={20} /></div>
+          <div style={{ flex: 1 }}>
+            <h3 style={{ fontSize: '1rem' }}>{t.setTargetTitle}</h3>
+            <p className="subtitle">{t.setTargetSub}</p>
+            <div className="preset-pills">
+              {[10, 20, 30, 50].map(c => (
+                <button key={c} className={`pill ${targetGrips === c ? 'active' : ''}`} onClick={() => setTargetGrips(c)}>
+                  {c} ครั้ง
+                </button>
+              ))}
+              <button className="pill">{t.custom}</button>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: 'pointer', padding: '0.5rem', alignSelf: 'flex-start' }}>
+          <RefreshCw size={16} /> {t.resetDefault}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderHistory = () => (
+    <div>
+      <div className="page-title">
+        <h2>{t.histMainTitle}</h2>
+        <p>{t.histMainSub}</p>
       </div>
 
-      <div className="form-group">
-        <label>{t.settingsGripTitle}</label>
-        <div className="desc">{t.settingsGripDesc}</div>
-        <input 
-          type="range" 
-          className="range-slider" 
-          min="0" max="2.5" step="0.1" 
-          value={gripThreshold}
-          onChange={(e) => saveSettings(parseFloat(e.target.value), restingBaseline)}
-        />
-        <div className="value-display">+{gripThreshold.toFixed(1)} V</div>
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
+          <div>
+            <h3 style={{ fontSize: '1rem' }}>{t.histStatTitle}</h3>
+            <div className="subtitle">{t.histStatSub}</div>
+          </div>
+          <div style={{ display: 'flex', background: 'var(--bg-main)', borderRadius: '20px', padding: '4px' }}>
+            <button className={`pill ${histPeriod === 'week' ? 'active' : ''}`} onClick={() => setHistPeriod('week')} style={{ border: 'none', background: histPeriod === 'week' ? 'white' : 'transparent', color: histPeriod === 'week' ? 'var(--text-primary)' : 'var(--text-secondary)', boxShadow: histPeriod === 'week' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>{t.week}</button>
+            <button className={`pill ${histPeriod === 'month' ? 'active' : ''}`} onClick={() => setHistPeriod('month')} style={{ border: 'none', background: histPeriod === 'month' ? 'white' : 'transparent', color: histPeriod === 'month' ? 'var(--text-primary)' : 'var(--text-secondary)', boxShadow: histPeriod === 'month' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>{t.month}</button>
+          </div>
+        </div>
+        
+        <div style={{ height: '200px', width: '100%', position: 'relative' }}>
+          {/* Chart Mock */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: '30px', borderBottom: '1px dashed var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+             {[4,3,2,1,0].map(v => (
+               <div key={v} style={{ position: 'relative', height: '0', width: '100%' }}>
+                 <div style={{ position: 'absolute', top: '-10px', left: 0, fontSize: '10px', color: 'var(--text-muted)' }}>{v}</div>
+                 <div style={{ borderTop: '1px dashed var(--border-color)', width: 'calc(100% - 30px)', marginLeft: '30px' }}></div>
+               </div>
+             ))}
+          </div>
+          <div style={{ position: 'absolute', bottom: 0, left: '30px', right: 0, display: 'flex', justifyContent: 'space-around', fontSize: '12px', color: 'var(--text-muted)' }}>
+            <span>จ.</span><span>อ.</span><span>พ.</span><span>พฤ.</span><span>ศ.</span><span>ส.</span><span>อา.</span>
+          </div>
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+            {t.noData}
+          </div>
+        </div>
+        <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1rem' }}>วันในสัปดาห์</div>
       </div>
 
-      <div className="form-group" style={{ marginTop: '3rem' }}>
-        <label>{t.settingsBaseTitle}</label>
-        <div className="desc">{t.settingsBaseDesc}</div>
-        <input 
-          type="range" 
-          className="range-slider" 
-          min="0" max="2.5" step="0.1" 
-          value={restingBaseline}
-          onChange={(e) => saveSettings(gripThreshold, parseFloat(e.target.value))}
-        />
-        <div className="value-display">+{restingBaseline.toFixed(1)} V</div>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <table className="history-table">
+          <thead>
+            <tr>
+              <th>{t.colDate}</th>
+              <th>{t.colSetTime}</th>
+              <th>{t.colRealTime}</th>
+              <th>{t.colGrip}</th>
+              <th>{t.colEMG}</th>
+              <th>{t.colAvg}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colSpan="6" style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
+                {t.noHistory}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   );
 
   return (
     <div className="app-container">
-      <header className="header">
-        <div className="header-content">
-          <nav className="nav-tabs">
-            <button className={`nav-tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-              <Home size={18} /> {t.tabDashboard}
-            </button>
-            <button className={`nav-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
-              <History size={18} /> {t.tabHistory}
-            </button>
-            <button className={`nav-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
-              <Settings size={18} /> {t.tabSettings}
-            </button>
-            <button className="lang-toggle" onClick={() => setLang(lang === 'th' ? 'en' : 'th')}>
-              <Globe size={18} /> {lang === 'th' ? 'EN' : 'TH'}
-            </button>
-          </nav>
+      <header className="header-container">
+        <div className="header-top">
+          <div className="logo-area">
+            <div className="logo-icon">
+              <Activity size={24} />
+            </div>
+            <div className="logo-text">
+              <h1>{t.appTitle}</h1>
+              <div className="subtitle">{t.appSub}</div>
+            </div>
+          </div>
+          <button className="lang-toggle" onClick={() => setLang(lang === 'th' ? 'en' : 'th')}>
+            <Globe size={16} /> {lang === 'th' ? 'EN' : 'TH'}
+          </button>
         </div>
+        <nav className="nav-tabs">
+          <button className={`nav-tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
+            <Activity size={18} /> {t.tabDashboard}
+          </button>
+          <button className={`nav-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
+            <SlidersHorizontal size={18} /> {t.tabSettings}
+          </button>
+          <button className={`nav-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
+            <History size={18} /> {t.tabHistory}
+          </button>
+        </nav>
       </header>
-      
-      {errorMsg && (
-        <div className="error-banner">
-          <AlertTriangle size={20} />
-          {errorMsg}
-        </div>
-      )}
 
       <main>
         {activeTab === 'dashboard' && renderDashboard()}
