@@ -502,12 +502,14 @@ function App() {
           if (sessionRef.current.isActive) {
             newPoints.push({ time: timeRef.current++, value: acMv, raw: rawVal, rawMv: rawMv });
 
-            if (!sessionRef.current.isGripping && rawMv >= sessionRef.current.startMv) {
+            // ใช้ acMv สำหรับเปรียบเทียบ threshold เพื่อให้ตรงกับกราฟที่ถูกปรับ offset ให้อยู่ตรงกลางแล้ว
+            if (!sessionRef.current.isGripping && acMv >= sessionRef.current.startMv) {
                sessionRef.current.isGripping = true;
+             } else if (sessionRef.current.isGripping && acMv <= sessionRef.current.stopMv) {
+               sessionRef.current.isGripping = false;
+               // นับการกำเมื่อทำครบรอบ (เกินเกณฑ์ Start และตกลงมาต่ำกว่า Stop)
                newGripCount++;
                sessionRef.current.gripCount = newGripCount;
-             } else if (sessionRef.current.isGripping && rawMv <= sessionRef.current.stopMv) {
-               sessionRef.current.isGripping = false;
              }
           }
         }
@@ -752,9 +754,9 @@ function App() {
               <XAxis dataKey="time" hide />
               <YAxis domain={[-2500, 2500]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
-              <ReferenceLine y={startGripMv - dcOffsetState} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+              <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.startAt} ${startGripMv} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv - dcOffsetState} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+              <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.stopAt} ${stopGripMv} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
               <Line type="monotone" dataKey="value" stroke="var(--text-primary)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
@@ -1077,6 +1079,7 @@ function App() {
       </div>
     </div>
   );
+  };
 
   if (!currentUser) {
     return (
