@@ -315,6 +315,8 @@ function App() {
   const [targetGrips, setTargetGrips] = useState(20);
   const [startGripMv, setStartGripMv] = useState(978.0);
   const [stopGripMv, setStopGripMv] = useState(880.0);
+  const [triggerMult, setTriggerMult] = useState(1.25);
+  const [releaseMult, setReleaseMult] = useState(1.10);
 
   // Refs for real-time processing
   const bufferRef = useRef("");
@@ -608,8 +610,16 @@ function App() {
                 </div>
               </div>
               <div className="tester-actions">
-                <button className="btn-select" onClick={() => handleSelectTester(t.id)}>
-                  เลือกทดสอบ (Select)
+                <button 
+                  className={`btn-select ${activeTesterId === t.id ? 'active' : ''}`} 
+                  onClick={() => handleSelectTester(t.id)}
+                  style={{
+                    backgroundColor: activeTesterId === t.id ? 'var(--accent-teal)' : 'transparent',
+                    color: activeTesterId === t.id ? 'white' : 'var(--text-primary)',
+                    border: activeTesterId === t.id ? 'none' : '1px solid var(--border-color)'
+                  }}
+                >
+                  {activeTesterId === t.id ? (lang === 'th' ? '✓ เลือกแล้ว' : '✓ Selected') : (lang === 'th' ? 'ยังไม่ได้เลือก' : 'Not Selected')}
                 </button>
                 <div style={{ display: 'flex', gap: '1rem' }}>
                   <button className="btn-edit" onClick={() => alert('ฟังก์ชันแก้ไขกำลังอยู่ในระหว่างการพัฒนา')}>
@@ -751,14 +761,14 @@ function App() {
             <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
               <XAxis dataKey="time" hide />
-              <YAxis domain={[0, 5000]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis domain={[-2500, 2500]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
-              <ReferenceLine y={startGripMv + 2500} stroke="var(--accent-teal)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.startAt} ${startGripMv + 2500} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv + 2500} stroke="var(--accent-orange)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.stopAt} ${stopGripMv + 2500} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
+              <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+                label={{ position: 'right', value: `${t.startAt} ${startGripMv} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
+              <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+                label={{ position: 'right', value: `${t.stopAt} ${stopGripMv} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
-              <Line type="monotone" dataKey="rawMv" stroke="var(--text-primary)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="value" stroke="var(--text-primary)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
