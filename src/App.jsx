@@ -362,19 +362,37 @@ function App() {
           
           if (combined.length > 20) {
             let winMax = -5000, winMin = 5000;
-            let zeroCrossings = 0;
+            let zcIndices = [];
+            
             for (let i = 1; i < combined.length; i++) {
               if (combined[i].rawMv > winMax) winMax = combined[i].rawMv;
               if (combined[i].rawMv < winMin) winMin = combined[i].rawMv;
-              // Detect zero crossings on the AC signal (centered at 0)
-              if (combined[i-1].value < 0 && combined[i].value >= 0) zeroCrossings++;
+              
+              // Record indices of positive-going zero crossings
+              if (combined[i-1].value < 0 && combined[i].value >= 0) {
+                zcIndices.push(combined[i].time);
+              }
             }
+            
             if (winMin === 5000) winMin = 0;
             if (winMax === -5000) winMax = 0;
             setCurrentVmax(winMax);
             setCurrentVmin(winMin);
             setCurrentVpp(winMax - winMin);
-            setCurrentFreq(zeroCrossings / 3.0); // Approx freq based on a 3-second window
+            
+            // Calculate frequency based on zero crossing average period
+            // Assuming 50ms (0.05s) per sample as per the original code
+            if (zcIndices.length >= 2) {
+              let totalPeriod = 0;
+              for (let i = 1; i < zcIndices.length; i++) {
+                totalPeriod += (zcIndices[i] - zcIndices[i-1]);
+              }
+              const periodInSamples = totalPeriod / (zcIndices.length - 1);
+              const periodInSeconds = periodInSamples * 0.05; // 0.05s = 20Hz sampling rate
+              setCurrentFreq(1 / periodInSeconds);
+            } else {
+              setCurrentFreq(0);
+            }
           }
           
           return combined;
