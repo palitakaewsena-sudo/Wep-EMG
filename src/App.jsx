@@ -185,6 +185,7 @@ function App() {
   const timeRef = useRef(150);
   const bufferRef = useRef("");
   const filterRef = useRef({ prevX: null, prevY: 0, dcOffset: 2500 });
+  const [dcOffsetState, setDcOffsetState] = useState(2500);
 
   // Settings State
   const [triggerMult, setTriggerMult] = useState(1.25);
@@ -280,7 +281,7 @@ function App() {
     setCurrentVpp(0);
   };
 
-  const finishSession = () => {
+  function finishSession() {
     setIsSessionActive(false);
     const targetSetTime = isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60;
     const actualTime = targetSetTime - timeLeft;
@@ -295,7 +296,7 @@ function App() {
       avg: sessionRef.current.gripCount > 0 ? (actualTime / sessionRef.current.gripCount).toFixed(1) : 0
     };
     setHistoryLogs(prev => [newLog, ...prev]);
-  };
+  }
 
   const handleConnect = async () => {
     if (isConnected && device) {
@@ -362,7 +363,7 @@ function App() {
           // Adjusts slowly to the real center voltage (starts at 2500)
           filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
           
-          // Signal centered at 0 for Oscilloscope view (Not used for graph anymore)
+          // Signal centered at 0 for Oscilloscope view
           const acMv = rawMv - filterRef.current.dcOffset; 
           
           // Use rawMv for absolute Vmax and Vmin (includes the 2.5V shift)
@@ -370,7 +371,7 @@ function App() {
           if (rawMv < minV) minV = rawMv;
 
           if (sessionRef.current.isActive) {
-            newPoints.push({ time: timeRef.current++, value: rawMv, raw: rawVal, rawMv: rawMv });
+            newPoints.push({ time: timeRef.current++, value: acMv, raw: rawVal, rawMv: rawMv });
 
             if (!sessionRef.current.isGripping && rawMv >= sessionRef.current.startMv) {
                sessionRef.current.isGripping = true;
@@ -427,6 +428,7 @@ function App() {
           
           return combined;
         });
+        setDcOffsetState(filterRef.current.dcOffset);
         }
 
         if (sessionRef.current.isActive && newGripCount !== gripCount) setGripCount(newGripCount);
@@ -503,11 +505,11 @@ function App() {
             <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
               <XAxis dataKey="time" hide />
-              <YAxis domain={[0, 5000]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis domain={[-2500, 2500]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
-              <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+              <ReferenceLine y={startGripMv - dcOffsetState} stroke="var(--accent-teal)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.startAt} ${startGripMv} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+              <ReferenceLine y={stopGripMv - dcOffsetState} stroke="var(--accent-orange)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.stopAt} ${stopGripMv} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
               <Line type="monotone" dataKey="value" stroke="var(--text-primary)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
