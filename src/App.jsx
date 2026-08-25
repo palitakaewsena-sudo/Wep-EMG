@@ -4,7 +4,8 @@ import {
 } from 'recharts';
 import { 
   Activity, Settings as SettingsIcon, Play, Square, Bluetooth, BluetoothConnected, 
-  History, Globe, Zap, Hand, Clock, BarChart2, Target, SlidersHorizontal, RefreshCw
+  History, Globe, Zap, Hand, Clock, BarChart2, Target, SlidersHorizontal, RefreshCw,
+  UserPlus, User, Lock, LogOut, Users, Check
 } from 'lucide-react';
 import './index.css';
 
@@ -84,7 +85,23 @@ const i18n = {
     colRealTime: "เวลาจริง",
     colGrip: "กำมือ (ครั้ง)",
     colEMG: "EMG (mV)",
-    colAvg: "เฉลี่ย (วิ)"
+    colAvg: "เฉลี่ย (วิ)",
+    
+    // Auth
+    authLogin: "เข้าสู่ระบบ",
+    authRegister: "ลงทะเบียนผู้ใช้ใหม่",
+    authSelectUser: "เลือกผู้ใช้งาน",
+    authName: "ชื่อ",
+    authGender: "เพศ",
+    authAge: "อายุ",
+    authPassword: "รหัสผ่าน",
+    authMale: "ชาย",
+    authFemale: "หญิง",
+    authOther: "อื่นๆ",
+    authLimitReached: "ไม่สามารถลงทะเบียนได้ (สูงสุด 3 คนแล้ว)",
+    authWrongPass: "รหัสผ่านไม่ถูกต้อง",
+    authEnterPass: "กรุณาใส่รหัสผ่าน",
+    authLogout: "ออกจากระบบ"
   },
   en: {
     appTitle: "EMG Grip Therapy",
@@ -161,7 +178,23 @@ const i18n = {
     colRealTime: "Actual Time",
     colGrip: "Grips",
     colEMG: "EMG (mV)",
-    colAvg: "Avg (s)"
+    colAvg: "Avg (s)",
+    
+    // Auth
+    authLogin: "Login",
+    authRegister: "Register New User",
+    authSelectUser: "Select User",
+    authName: "Name",
+    authGender: "Gender",
+    authAge: "Age",
+    authPassword: "Password",
+    authMale: "Male",
+    authFemale: "Female",
+    authOther: "Other",
+    authLimitReached: "Registration limit reached (max 3 users)",
+    authWrongPass: "Incorrect password",
+    authEnterPass: "Please enter password",
+    authLogout: "Logout"
   }
 };
 
@@ -169,6 +202,33 @@ function App() {
   const [lang, setLang] = useState('th');
   const t = i18n[lang];
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  // Auth State
+  const [users, setUsers] = useState(() => {
+    const saved = localStorage.getItem('emg_users');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [currentUser, setCurrentUser] = useState(() => {
+    const activeId = localStorage.getItem('emg_active_user');
+    if (activeId) {
+      const savedUsers = JSON.parse(localStorage.getItem('emg_users') || '[]');
+      return savedUsers.find(u => u.id === activeId) || null;
+    }
+    return null;
+  });
+  
+  // Auth UI State
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [selectedUserLogin, setSelectedUserLogin] = useState(null);
+  
+  // Auth Forms
+  const [regName, setRegName] = useState('');
+  const [regGender, setRegGender] = useState('Male');
+  const [regAge, setRegAge] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   // Bluetooth State
   const [isConnected, setIsConnected] = useState(false);
@@ -203,6 +263,66 @@ function App() {
   // History
   const [historyLogs, setHistoryLogs] = useState([]);
   const [histPeriod, setHistPeriod] = useState('week');
+
+  useEffect(() => {
+    if (currentUser) {
+      const savedHistory = localStorage.getItem(`emg_history_${currentUser.id}`);
+      setHistoryLogs(savedHistory ? JSON.parse(savedHistory) : []);
+    }
+  }, [currentUser]);
+
+  // Auth Handlers
+  const handleRegister = (e) => {
+    e.preventDefault();
+    if (users.length >= 3) {
+      alert(t.authLimitReached);
+      return;
+    }
+    if (!regName || !regPassword) return;
+
+    const newUser = {
+      id: Date.now().toString(),
+      name: regName,
+      gender: regGender,
+      age: regAge,
+      password: regPassword
+    };
+    const newUsers = [...users, newUser];
+    setUsers(newUsers);
+    localStorage.setItem('emg_users', JSON.stringify(newUsers));
+    
+    // Auto login
+    setCurrentUser(newUser);
+    localStorage.setItem('emg_active_user', newUser.id);
+    
+    // Reset forms
+    setRegName('');
+    setRegAge('');
+    setRegPassword('');
+    setIsRegistering(false);
+  };
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (!selectedUserLogin) return;
+    if (loginPassword === selectedUserLogin.password) {
+      setCurrentUser(selectedUserLogin);
+      localStorage.setItem('emg_active_user', selectedUserLogin.id);
+      setLoginPassword('');
+      setLoginError('');
+      setSelectedUserLogin(null);
+    } else {
+      setLoginError(t.authWrongPass);
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('emg_active_user');
+    if (isConnected && device) {
+      device.gatt.disconnect();
+    }
+  };
 
   // Custom Settings State
   const [isCustomTime, setIsCustomTime] = useState(false);
@@ -297,7 +417,14 @@ function App() {
       emg: currentVpp.toFixed(1),
       avg: sessionRef.current.gripCount > 0 ? (actualTime / sessionRef.current.gripCount).toFixed(1) : 0
     };
-    setHistoryLogs(prev => [newLog, ...prev]);
+    
+    setHistoryLogs(prev => {
+      const updated = [newLog, ...prev];
+      if (currentUser) {
+        localStorage.setItem(`emg_history_${currentUser.id}`, JSON.stringify(updated));
+      }
+      return updated;
+    });
   }
 
   const handleConnect = async () => {
@@ -444,6 +571,122 @@ function App() {
       characteristic.removeEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
     };
   }, [characteristic]);
+
+  const renderAuth = () => (
+    <div className="auth-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '70vh', padding: '2rem' }}>
+      <div className="card" style={{ width: '100%', maxWidth: '400px', padding: '2rem', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)' }}>
+        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <div className="metric-icon teal" style={{ margin: '0 auto 1rem auto', width: '64px', height: '64px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <Users size={32} />
+          </div>
+          <h2>{isRegistering ? t.authRegister : t.authLogin}</h2>
+        </div>
+        
+        {!isRegistering && (
+          <div>
+            {users.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.5rem' }}>
+                {users.map(u => (
+                  <button 
+                    key={u.id} 
+                    style={{ 
+                      display: 'flex', alignItems: 'center', padding: '1rem', 
+                      borderRadius: '12px', border: selectedUserLogin?.id === u.id ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                      background: selectedUserLogin?.id === u.id ? 'rgba(0,188,163,0.05)' : 'white',
+                      textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s'
+                    }}
+                    onClick={() => { setSelectedUserLogin(u); setLoginError(''); setLoginPassword(''); }}
+                  >
+                    <div style={{ background: 'var(--bg-main)', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '1rem' }}>
+                      <User size={20} color="var(--text-secondary)" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600 }}>{u.name}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{u.gender === 'Male' ? t.authMale : u.gender === 'Female' ? t.authFemale : t.authOther}, {u.age}</div>
+                    </div>
+                    {selectedUserLogin?.id === u.id && <Check size={20} color="var(--accent-teal)" />}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '2rem 0', color: 'var(--text-muted)' }}>
+                ไม่มีผู้ใช้งานในระบบ กรุณาลงทะเบียน / No users found, please register
+              </div>
+            )}
+            
+            {selectedUserLogin && (
+              <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>{t.authPassword}</label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input 
+                      type="password" 
+                      value={loginPassword} 
+                      onChange={e => setLoginPassword(e.target.value)} 
+                      placeholder={t.authEnterPass}
+                      required
+                      style={{ width: '100%', padding: '0.75rem 1rem 0.75rem 2.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+                {loginError && <div style={{ color: 'var(--accent-orange)', fontSize: '0.875rem', textAlign: 'center' }}>{loginError}</div>}
+                <button type="submit" className="btn btn-teal" style={{ width: '100%', justifyContent: 'center' }}>{t.authLogin}</button>
+              </form>
+            )}
+            
+            {users.length < 3 && (
+              <button 
+                className="btn btn-outline" 
+                style={{ width: '100%', marginTop: '1.5rem', justifyContent: 'center' }}
+                onClick={() => { setIsRegistering(true); setSelectedUserLogin(null); }}
+              >
+                <UserPlus size={16} /> {t.authRegister}
+              </button>
+            )}
+            {users.length >= 3 && (
+              <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1rem' }}>
+                {t.authLimitReached}
+              </div>
+            )}
+          </div>
+        )}
+
+        {isRegistering && (
+          <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>{t.authName}</label>
+              <input type="text" value={regName} onChange={e => setRegName(e.target.value)} required style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>{t.authGender}</label>
+              <select value={regGender} onChange={e => setRegGender(e.target.value)} required style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'white', boxSizing: 'border-box' }}>
+                <option value="Male">{t.authMale}</option>
+                <option value="Female">{t.authFemale}</option>
+                <option value="Other">{t.authOther}</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>{t.authAge}</label>
+              <input type="number" min="1" value={regAge} onChange={e => setRegAge(e.target.value)} required style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>{t.authPassword}</label>
+              <input type="password" value={regPassword} onChange={e => setRegPassword(e.target.value)} required style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+              <button type="button" className="btn btn-outline" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setIsRegistering(false)}>
+                กลับ
+              </button>
+              <button type="submit" className="btn btn-teal" style={{ flex: 1, justifyContent: 'center' }}>
+                <Check size={16} /> บันทึก
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
 
   const renderDashboard = () => (
     <div className="dashboard-grid">
@@ -698,63 +941,118 @@ function App() {
     </div>
   );
 
-  const renderHistory = () => (
-    <div>
-      <div className="page-title">
-        <h2>{t.histMainTitle}</h2>
-        <p>{t.histMainSub}</p>
-      </div>
+  const getWeeklyData = () => {
+    const daysTh = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'];
+    const daysEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const days = lang === 'th' ? daysTh : daysEn;
+    const data = days.map(d => ({ name: d, grips: 0 }));
+    
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    historyLogs.forEach(log => {
+      const d = new Date(log.id);
+      if (d >= oneWeekAgo) {
+        let dayIdx = d.getDay() - 1;
+        if (dayIdx < 0) dayIdx = 6;
+        data[dayIdx].grips += log.grips;
+      }
+    });
+    return data;
+  };
 
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
-          <div>
-            <h3 style={{ fontSize: '1rem' }}>{t.histStatTitle}</h3>
-            <div className="subtitle">{t.histStatSub}</div>
-          </div>
-          <div style={{ display: 'flex', background: 'var(--bg-main)', borderRadius: '20px', padding: '4px' }}>
-            <button className={`pill ${histPeriod === 'week' ? 'active' : ''}`} onClick={() => setHistPeriod('week')} style={{ border: 'none', background: histPeriod === 'week' ? 'white' : 'transparent', color: histPeriod === 'week' ? 'var(--text-primary)' : 'var(--text-secondary)', boxShadow: histPeriod === 'week' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>{t.week}</button>
-            <button className={`pill ${histPeriod === 'month' ? 'active' : ''}`} onClick={() => setHistPeriod('month')} style={{ border: 'none', background: histPeriod === 'month' ? 'white' : 'transparent', color: histPeriod === 'month' ? 'var(--text-primary)' : 'var(--text-secondary)', boxShadow: histPeriod === 'month' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>{t.month}</button>
-          </div>
+  const getMonthlyData = () => {
+    const monthsTh = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = lang === 'th' ? monthsTh : monthsEn;
+    
+    const data = months.map(m => ({ name: m, totalGrips: 0, count: 0, avg: 0 }));
+    const currentYear = new Date().getFullYear();
+    
+    historyLogs.forEach(log => {
+      const d = new Date(log.id);
+      if (d.getFullYear() === currentYear) {
+        const mIdx = d.getMonth();
+        data[mIdx].totalGrips += log.grips;
+        data[mIdx].count += 1;
+      }
+    });
+    
+    data.forEach(m => {
+      if (m.count > 0) m.avg = Math.round(m.totalGrips / m.count);
+    });
+    return data;
+  };
+
+  const renderHistory = () => {
+    const totalGripsAllTime = historyLogs.reduce((acc, curr) => acc + curr.grips, 0);
+    const avgGrips = historyLogs.length > 0 ? Math.round(totalGripsAllTime / historyLogs.length) : 0;
+
+    return (
+      <div>
+        <div className="page-title">
+          <h2>{t.histMainTitle}</h2>
+          <p>{t.histMainSub}</p>
         </div>
-        
-        <div style={{ height: '200px', width: '100%', position: 'relative' }}>
-          {/* Chart Mock */}
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: '30px', borderBottom: '1px dashed var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-             {[4,3,2,1,0].map(v => (
-               <div key={v} style={{ position: 'relative', height: '0', width: '100%' }}>
-                 <div style={{ position: 'absolute', top: '-10px', left: 0, fontSize: '10px', color: 'var(--text-muted)' }}>{v}</div>
-                 <div style={{ borderTop: '1px dashed var(--border-color)', width: 'calc(100% - 30px)', marginLeft: '30px' }}></div>
-               </div>
-             ))}
+
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
+            <div>
+              <h3 style={{ fontSize: '1rem' }}>{t.histStatTitle}</h3>
+              <div className="subtitle">
+                {lang === 'th' ? `เฉลี่ย ${avgGrips} ครั้ง/เซสชัน` : `Average ${avgGrips} grips/session`}
+              </div>
+            </div>
+            <div style={{ display: 'flex', background: 'var(--bg-main)', borderRadius: '20px', padding: '4px' }}>
+              <button className={`pill ${histPeriod === 'week' ? 'active' : ''}`} onClick={() => setHistPeriod('week')} style={{ border: 'none', background: histPeriod === 'week' ? 'white' : 'transparent', color: histPeriod === 'week' ? 'var(--text-primary)' : 'var(--text-secondary)', boxShadow: histPeriod === 'week' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>{t.week}</button>
+              <button className={`pill ${histPeriod === 'month' ? 'active' : ''}`} onClick={() => setHistPeriod('month')} style={{ border: 'none', background: histPeriod === 'month' ? 'white' : 'transparent', color: histPeriod === 'month' ? 'var(--text-primary)' : 'var(--text-secondary)', boxShadow: histPeriod === 'month' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>{t.month}</button>
+            </div>
           </div>
-          <div style={{ position: 'absolute', bottom: 0, left: '30px', right: 0, display: 'flex', justifyContent: 'space-around', fontSize: '10px', color: 'var(--text-muted)' }}>
-            {histPeriod === 'week' ? (
-              <><span>จ.</span><span>อ.</span><span>พ.</span><span>พฤ.</span><span>ศ.</span><span>ส.</span><span>อา.</span></>
+          
+          <div style={{ height: '250px', width: '100%' }}>
+            {historyLogs.length === 0 ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>
+                {t.noData}
+              </div>
+            ) : histPeriod === 'week' ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={getWeeklyData()} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip cursor={{ fill: 'rgba(0,188,163,0.05)' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
+                  <Bar dataKey="grips" fill="var(--accent-teal)" radius={[4, 4, 0, 0]} name={lang === 'th' ? 'จำนวนกำมือ (ครั้ง)' : 'Grips'} />
+                </BarChart>
+              </ResponsiveContainer>
             ) : (
-              <><span>ม.ค.</span><span>ก.พ.</span><span>มี.ค.</span><span>เม.ย.</span><span>พ.ค.</span><span>มิ.ย.</span><span>ก.ค.</span><span>ส.ค.</span><span>ก.ย.</span><span>ต.ค.</span><span>พ.ย.</span><span>ธ.ค.</span></>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={getMonthlyData()} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
+                  <Line type="monotone" dataKey="avg" stroke="var(--accent-orange)" strokeWidth={3} dot={{ r: 4, fill: 'var(--accent-orange)' }} activeDot={{ r: 6 }} name={lang === 'th' ? 'เฉลี่ย (ครั้ง)' : 'Avg Grips'} />
+                </LineChart>
+              </ResponsiveContainer>
             )}
           </div>
-          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-            {t.noData}
+          <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1rem' }}>
+            {histPeriod === 'week' ? (lang === 'th' ? 'วันในสัปดาห์ (7 วันล่าสุด)' : 'Days of Week (Last 7 Days)') : (lang === 'th' ? 'เดือน (ปีปัจจุบัน)' : 'Months (Current Year)')}
           </div>
         </div>
-        <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1rem' }}>
-          {histPeriod === 'week' ? 'วันในสัปดาห์' : 'เดือน'}
-        </div>
-      </div>
 
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <table className="history-table">
-          <thead>
-            <tr>
-              <th>{t.colDate}</th>
-              <th>{t.colSetTime}</th>
-              <th>{t.colRealTime}</th>
-              <th>{t.colGrip}</th>
-              <th>{t.colEMG}</th>
-              <th>{t.colAvg}</th>
-            </tr>
-          </thead>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table className="history-table">
+            <thead>
+              <tr>
+                <th>{t.colDate}</th>
+                <th>{t.colSetTime}</th>
+                <th>{t.colRealTime}</th>
+                <th>{t.colGrip}</th>
+                <th>{t.colEMG}</th>
+                <th>{t.colAvg}</th>
+              </tr>
+            </thead>
           <tbody>
             {historyLogs.length > 0 ? (
               historyLogs.map(log => (
@@ -780,6 +1078,32 @@ function App() {
     </div>
   );
 
+  if (!currentUser) {
+    return (
+      <div className="app-container">
+        <header className="header-container">
+          <div className="header-top">
+            <div className="logo-area">
+              <div className="logo-icon">
+                <Activity size={24} />
+              </div>
+              <div className="logo-text">
+                <h1>{t.appTitle}</h1>
+                <div className="subtitle">{t.appSub}</div>
+              </div>
+            </div>
+            <button className="lang-toggle" onClick={() => setLang(lang === 'th' ? 'en' : 'th')}>
+              <Globe size={16} /> {lang === 'th' ? 'EN' : 'TH'}
+            </button>
+          </div>
+        </header>
+        <main>
+          {renderAuth()}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       <header className="header-container">
@@ -793,9 +1117,17 @@ function App() {
               <div className="subtitle">{t.appSub}</div>
             </div>
           </div>
-          <button className="lang-toggle" onClick={() => setLang(lang === 'th' ? 'en' : 'th')}>
-            <Globe size={16} /> {lang === 'th' ? 'EN' : 'TH'}
-          </button>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-main)', padding: '6px 12px', borderRadius: '20px' }}>
+              <User size={14} /> <span style={{ fontWeight: 500 }}>{currentUser.name}</span>
+            </div>
+            <button className="lang-toggle" onClick={() => setLang(lang === 'th' ? 'en' : 'th')}>
+              <Globe size={16} /> {lang === 'th' ? 'EN' : 'TH'}
+            </button>
+            <button className="lang-toggle" style={{ color: 'var(--accent-orange)' }} onClick={handleLogout} title={t.authLogout}>
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
         <nav className="nav-tabs">
           <button className={`nav-tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
