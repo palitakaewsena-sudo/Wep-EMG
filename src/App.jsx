@@ -184,7 +184,7 @@ function App() {
   const [rawAdc, setRawAdc] = useState(0);
   const timeRef = useRef(150);
   const bufferRef = useRef("");
-  const filterRef = useRef({ prevX: null, prevY: 0 });
+  const filterRef = useRef({ prevX: null, prevY: 0, dcOffset: 2500 });
 
   // Settings State
   const [triggerMult, setTriggerMult] = useState(1.25);
@@ -327,21 +327,27 @@ function App() {
           lastRaw = rawVal;
           
           // 2.5V shifting circuit (assuming 5V reference ADC)
-          // 0V -> -2500mV, 2.5V -> 0mV, 5V -> +2500mV
           const rawMv = (rawVal / 1023) * 5000; 
-          const mvVal = rawMv - 2500; 
           
-          if (mvVal > maxV) maxV = mvVal;
-          if (mvVal < minV) minV = mvVal;
+          // Dynamic DC offset tracking (High-pass filter for baseline wander)
+          // Adjusts slowly to the real center voltage (starts at 2500)
+          filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
+          
+          // Signal centered at 0 for Oscilloscope view
+          const acMv = rawMv - filterRef.current.dcOffset; 
+          
+          // Use rawMv for absolute Vmax and Vmin (includes the 2.5V shift)
+          if (rawMv > maxV) maxV = rawMv;
+          if (rawMv < minV) minV = rawMv;
 
-          newPoints.push({ time: timeRef.current++, value: mvVal, raw: rawVal });
+          newPoints.push({ time: timeRef.current++, value: acMv, raw: rawVal, rawMv: rawMv });
 
           if (sessionRef.current.isActive) {
-             if (!sessionRef.current.isGripping && mvVal >= sessionRef.current.startMv) {
+             if (!sessionRef.current.isGripping && rawMv >= sessionRef.current.startMv) {
                sessionRef.current.isGripping = true;
                newGripCount++;
                sessionRef.current.gripCount = newGripCount;
-             } else if (sessionRef.current.isGripping && mvVal <= sessionRef.current.stopMv) {
+             } else if (sessionRef.current.isGripping && rawMv <= sessionRef.current.stopMv) {
                sessionRef.current.isGripping = false;
              }
           }
@@ -358,8 +364,9 @@ function App() {
             let winMax = -5000, winMin = 5000;
             let zeroCrossings = 0;
             for (let i = 1; i < combined.length; i++) {
-              if (combined[i].value > winMax) winMax = combined[i].value;
-              if (combined[i].value < winMin) winMin = combined[i].value;
+              if (combined[i].rawMv > winMax) winMax = combined[i].rawMv;
+              if (combined[i].rawMv < winMin) winMin = combined[i].rawMv;
+              // Detect zero crossings on the AC signal (centered at 0)
               if (combined[i-1].value < 0 && combined[i].value >= 0) zeroCrossings++;
             }
             if (winMin === 5000) winMin = 0;
