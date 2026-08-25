@@ -727,11 +727,11 @@ function App() {
                </div>
              ))}
           </div>
-          <div style={{ position: 'absolute', bottom: 0, left: '30px', right: 0, display: 'flex', justifyContent: 'space-around', fontSize: '12px', color: 'var(--text-muted)' }}>
+          <div style={{ position: 'absolute', bottom: 0, left: '30px', right: 0, display: 'flex', justifyContent: 'space-around', fontSize: '10px', color: 'var(--text-muted)' }}>
             {histPeriod === 'week' ? (
               <><span>จ.</span><span>อ.</span><span>พ.</span><span>พฤ.</span><span>ศ.</span><span>ส.</span><span>อา.</span></>
             ) : (
-              <><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span><span>30</span></>
+              <><span>ม.ค.</span><span>ก.พ.</span><span>มี.ค.</span><span>เม.ย.</span><span>พ.ค.</span><span>มิ.ย.</span><span>ก.ค.</span><span>ส.ค.</span><span>ก.ย.</span><span>ต.ค.</span><span>พ.ย.</span><span>ธ.ค.</span></>
             )}
           </div>
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
@@ -739,7 +739,7 @@ function App() {
           </div>
         </div>
         <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1rem' }}>
-          {histPeriod === 'week' ? 'วันในสัปดาห์' : 'วันที่ในเดือน'}
+          {histPeriod === 'week' ? 'วันในสัปดาห์' : 'เดือน'}
         </div>
       </div>
 
