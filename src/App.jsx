@@ -21,6 +21,9 @@ const i18n = {
     disconnectBtn: "ยกเลิกการเชื่อมต่อ",
     emgVal: "ค่า EMG",
     emgSub: "mV Vpp · Raw ADC: 0",
+    vmax: "Vmax (สูงสุด)",
+    vmin: "Vmin (ต่ำสุด)",
+    freq: "ความถี่ (Hz)",
     gripVal: "กำมือ",
     gripSub: "ครั้ง",
     timeVal: "เวลาคงเหลือ",
@@ -95,6 +98,9 @@ const i18n = {
     disconnectBtn: "Disconnect",
     emgVal: "EMG Value",
     emgSub: "mV Vpp · Raw ADC: 0",
+    vmax: "Vmax (Max)",
+    vmin: "Vmin (Min)",
+    freq: "Freq (Hz)",
     gripVal: "Grips",
     gripSub: "count",
     timeVal: "Time Left",
@@ -172,6 +178,9 @@ function App() {
   // EMG Data
   const [emgData, setEmgData] = useState(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
   const [currentVpp, setCurrentVpp] = useState(0);
+  const [currentVmax, setCurrentVmax] = useState(0);
+  const [currentVmin, setCurrentVmin] = useState(0);
+  const [currentFreq, setCurrentFreq] = useState(0);
   const [rawAdc, setRawAdc] = useState(0);
   const timeRef = useRef(150);
   const bufferRef = useRef("");
@@ -317,9 +326,10 @@ function App() {
           const rawVal = parseFloat(line); // Assuming ADC 0-1023
           lastRaw = rawVal;
           
-          // Map to mV assuming 0-3300mV or similar. The mockups show values around 500-1000mV.
-          // Let's just scale it directly for the demo visualization
-          const mvVal = (rawVal / 1023) * 3300; 
+          // 2.5V shifting circuit (assuming 5V reference ADC)
+          // 0V -> -2500mV, 2.5V -> 0mV, 5V -> +2500mV
+          const rawMv = (rawVal / 1023) * 5000; 
+          const mvVal = rawMv - 2500; 
           
           if (mvVal > maxV) maxV = mvVal;
           if (mvVal < minV) minV = mvVal;
@@ -340,15 +350,30 @@ function App() {
 
       if (newPoints.length > 0) {
         setRawAdc(lastRaw);
-        if (maxV !== 0 && minV !== 5000) {
-           setCurrentVpp((maxV - minV)/2); // Just an approximation for display
-        }
-        if (sessionRef.current.isActive && newGripCount !== gripCount) setGripCount(newGripCount);
         
         setEmgData(prevData => {
-          const combined = [...prevData, ...newPoints];
-          return combined.slice(-150);
+          const combined = [...prevData, ...newPoints].slice(-150);
+          
+          if (combined.length > 20) {
+            let winMax = -5000, winMin = 5000;
+            let zeroCrossings = 0;
+            for (let i = 1; i < combined.length; i++) {
+              if (combined[i].value > winMax) winMax = combined[i].value;
+              if (combined[i].value < winMin) winMin = combined[i].value;
+              if (combined[i-1].value < 0 && combined[i].value >= 0) zeroCrossings++;
+            }
+            if (winMin === 5000) winMin = 0;
+            if (winMax === -5000) winMax = 0;
+            setCurrentVmax(winMax);
+            setCurrentVmin(winMin);
+            setCurrentVpp(winMax - winMin);
+            setCurrentFreq(zeroCrossings / 3.0); // Approx freq based on a 3-second window
+          }
+          
+          return combined;
         });
+
+        if (sessionRef.current.isActive && newGripCount !== gripCount) setGripCount(newGripCount);
       }
     };
 
@@ -435,16 +460,20 @@ function App() {
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-light)', textAlign: 'center' }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Grips</div>
-            <div style={{ fontWeight: 600, color: 'var(--accent-teal)' }}>{gripCount}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.vmin}</div>
+            <div style={{ fontWeight: 600, color: 'var(--accent-orange)' }}>{currentVmin.toFixed(1)} mV</div>
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>EMG mV</div>
-            <div style={{ fontWeight: 600 }}>{currentVpp.toFixed(1)} mV Vpp</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.vmax}</div>
+            <div style={{ fontWeight: 600, color: 'var(--accent-teal)' }}>{currentVmax.toFixed(1)} mV</div>
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.timeBottom}</div>
-            <div style={{ fontWeight: 600 }}>{formatTime(sessionTimePreset * 60 - timeLeft)}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Vp-p</div>
+            <div style={{ fontWeight: 600, color: 'var(--accent-blue)' }}>{currentVpp.toFixed(1)} mV</div>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.freq}</div>
+            <div style={{ fontWeight: 600, color: 'var(--accent-purple)' }}>{currentFreq.toFixed(1)} Hz</div>
           </div>
         </div>
       </div>
