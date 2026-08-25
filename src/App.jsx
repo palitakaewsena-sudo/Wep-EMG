@@ -16,9 +16,8 @@ const i18n = {
     tabConnect: "การเชื่อมต่อ",
     tabTesters: "คลังข้อมูลผู้ทดสอบ",
     tabMonitor: "มอนิเตอร์สัญญาณ",
-    tabTraining: "โหมดฝึกฝน",
-    tabCompare: "การเปรียบเทียบ",
-    tabAnalysis: "การวิเคราะห์ผล",
+    tabSettings: "การตั้งค่า",
+    tabHistory: "ประวัติ",
     notConnected: "ยังไม่เชื่อมต่อ",
     deviceSub: "อุปกรณ์ EMG ผ่าน BLE (HM-10)",
     connectBtn: "เชื่อมต่อ Bluetooth",
@@ -112,9 +111,8 @@ const i18n = {
     tabConnect: "Connection",
     tabTesters: "Tester Repository",
     tabMonitor: "Signal Monitor",
-    tabTraining: "Training Mode",
-    tabCompare: "Comparison",
-    tabAnalysis: "Result Analysis",
+    tabSettings: "Settings",
+    tabHistory: "History",
     notConnected: "Not Connected",
     deviceSub: "EMG device via BLE (HM-10)",
     connectBtn: "Connect Bluetooth",
@@ -690,30 +688,31 @@ function App() {
     </div>
   );
 
-  const renderDashboard = () => (
+  const renderConnection = () => (
     <div className="dashboard-grid">
-      {/* Banner */}
-      <div className="card banner-card col-span-12">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div className={`metric-icon ${isConnected ? 'teal' : 'gray'}`}>
-            <Bluetooth size={20} />
+      <div className="card banner-card col-span-12" style={{ padding: '4rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px', gap: '2rem' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div className={`metric-icon ${isConnected ? 'teal' : 'gray'}`} style={{ width: '80px', height: '80px', margin: '0 auto 1.5rem' }}>
+            <Bluetooth size={40} />
           </div>
-          <div>
-            <h3 style={{ fontSize: '1rem', color: isConnected ? 'var(--accent-teal)' : 'var(--text-primary)' }}>
-              {isConnected ? 'เชื่อมต่อแล้ว' : t.notConnected}
-            </h3>
-            <div className="subtitle">{t.deviceSub}</div>
-          </div>
+          <h3 style={{ fontSize: '1.5rem', color: isConnected ? 'var(--accent-teal)' : 'var(--text-primary)', marginBottom: '0.5rem' }}>
+            {isConnected ? 'เชื่อมต่อแล้ว' : t.notConnected}
+          </h3>
+          <div className="subtitle" style={{ fontSize: '1.1rem' }}>{t.deviceSub}</div>
         </div>
         <button 
           className={`btn ${isConnected ? 'btn-outline' : 'btn-teal'}`} 
           onClick={handleConnect}
-          style={{ borderRadius: '24px' }}
+          style={{ borderRadius: '24px', padding: '0.75rem 2.5rem', fontSize: '1.1rem' }}
         >
           {isConnected ? t.disconnectBtn : t.connectBtn}
         </button>
       </div>
+    </div>
+  );
 
+  const renderDashboard = () => (
+    <div className="dashboard-grid">
       {/* Metrics Row */}
       <div className="card metric-card col-span-3">
         <div className="metric-header"><Zap size={16} /> {t.emgVal}</div>
@@ -1106,23 +1105,20 @@ function App() {
         </div>
 
         <nav className="sidebar-nav">
-          <button className={`nav-item ${activeTab === 'connect' ? 'active' : ''}`} onClick={() => setActiveTab('connect')}>
-            <SettingsIcon size={18} /> {t.tabConnect}
-          </button>
           <button className={`nav-item ${activeTab === 'testers' ? 'active' : ''}`} onClick={() => setActiveTab('testers')}>
             <User size={18} /> {t.tabTesters}
+          </button>
+          <button className={`nav-item ${activeTab === 'connect' ? 'active' : ''}`} onClick={() => setActiveTab('connect')}>
+            <Bluetooth size={18} /> {t.tabConnect}
           </button>
           <button className={`nav-item ${activeTab === 'monitor' ? 'active' : ''}`} onClick={() => setActiveTab('monitor')}>
             <Activity size={18} /> {t.tabMonitor}
           </button>
-          <button className={`nav-item ${activeTab === 'training' ? 'active' : ''}`} onClick={() => setActiveTab('training')}>
-            <Zap size={18} /> {t.tabTraining}
+          <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
+            <SettingsIcon size={18} /> {t.tabSettings}
           </button>
-          <button className={`nav-item ${activeTab === 'compare' ? 'active' : ''}`} onClick={() => setActiveTab('compare')}>
-            <SlidersHorizontal size={18} /> {t.tabCompare}
-          </button>
-          <button className={`nav-item ${activeTab === 'analysis' ? 'active' : ''}`} onClick={() => setActiveTab('analysis')}>
-            <History size={18} /> {t.tabAnalysis}
+          <button className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
+            <History size={18} /> {t.tabHistory}
           </button>
         </nav>
 
@@ -1130,15 +1126,13 @@ function App() {
            <button className="lang-toggle" style={{ width: '100%', justifyContent: 'center', marginBottom: '0.5rem' }} onClick={() => setLang(lang === 'th' ? 'en' : 'th')}>
               <Globe size={16} /> {lang === 'th' ? 'Switch to English' : 'เปลี่ยนเป็นภาษาไทย'}
             </button>
-            <button className="lang-toggle" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setActiveTab('settings')}>
-              <SettingsIcon size={16} /> {lang === 'th' ? 'ตั้งค่า (Settings)' : 'Settings'}
-            </button>
         </div>
       </aside>
 
       <main className="main-content">
-        {['connect', 'monitor', 'training', 'compare', 'dashboard'].includes(activeTab) && renderDashboard()}
-        {['analysis', 'history'].includes(activeTab) && renderHistory()}
+        {activeTab === 'connect' && renderConnection()}
+        {activeTab === 'monitor' && renderDashboard()}
+        {activeTab === 'history' && renderHistory()}
         {activeTab === 'settings' && renderSettings()}
         {activeTab === 'testers' && renderTesterRepository()}
       </main>
