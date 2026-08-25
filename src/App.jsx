@@ -293,6 +293,36 @@ function App() {
   const [isCustomTarget, setIsCustomTarget] = useState(false);
   const [customTargetInput, setCustomTargetInput] = useState(20);
 
+  // BLE & Connection State
+  const [isConnected, setIsConnected] = useState(false);
+  const [device, setDevice] = useState(null);
+  const [characteristic, setCharacteristic] = useState(null);
+
+  // Session & Training State
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [gripCount, setGripCount] = useState(0);
+  
+  // Data & Signal State
+  const [emgData, setEmgData] = useState(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
+  const [currentVpp, setCurrentVpp] = useState(0);
+  const [currentVmax, setCurrentVmax] = useState(0);
+  const [currentVmin, setCurrentVmin] = useState(0);
+  const [currentFreq, setCurrentFreq] = useState(0);
+  const [rawAdc, setRawAdc] = useState(0);
+  const [dcOffsetState, setDcOffsetState] = useState(2500);
+
+  // Settings State
+  const [sessionTimePreset, setSessionTimePreset] = useState(5);
+  const [targetGrips, setTargetGrips] = useState(20);
+  const [startGripMv, setStartGripMv] = useState(978.0);
+  const [stopGripMv, setStopGripMv] = useState(880.0);
+
+  // Refs for real-time processing
+  const bufferRef = useRef("");
+  const timeRef = useRef(0);
+  const filterRef = useRef({ dcOffset: 2500 });
+
   const sessionRef = useRef({ 
     isActive: false, 
     startMv: 978.0, 
