@@ -500,7 +500,7 @@ function App() {
           if (calibratedMv < minV) minV = calibratedMv;
 
           if (sessionRef.current.isActive) {
-            newPoints.push({ time: timeRef.current++, value: calibratedMv, raw: rawVal, rawMv: rawMv, calibratedMv: calibratedMv });
+            newPoints.push({ time: timeRef.current++, value: calibratedMv + 2500, zeroCenteredValue: calibratedMv, raw: rawVal, rawMv: rawMv, calibratedMv: calibratedMv });
 
             // เช็ค calibratedMv เทียบกับ threshold (ไม่ต้อง + 2500 แล้ว เพราะหัก offset ออกแล้ว)
             if (!sessionRef.current.isGripping && calibratedMv >= sessionRef.current.startMv) {
@@ -527,20 +527,20 @@ function App() {
             let zcIndices = [];
             
             for (let i = 1; i < combined.length; i++) {
-              // Use value (which is now calibratedMv) for min/max
+              // Use value (which now includes +2500 offset) for min/max display
               if (combined[i].value > winMax) winMax = combined[i].value;
               if (combined[i].value < winMin) winMin = combined[i].value;
               
-              // Record indices of positive-going zero crossings
-              if (combined[i-1].value < 0 && combined[i].value >= 0) {
+              // Record indices of positive-going zero crossings (must use zero-centered data)
+              if (combined[i-1].zeroCenteredValue < 0 && combined[i].zeroCenteredValue >= 0) {
                 zcIndices.push(combined[i].time);
               }
             }
             
             if (winMin === 5000) winMin = 0;
             if (winMax === -5000) winMax = 0;
-            setCurrentVmax(winMax + 2500);
-            setCurrentVmin(winMin + 2500);
+            setCurrentVmax(winMax);
+            setCurrentVmin(winMin);
             setCurrentVpp(winMax - winMin);
             
             // Calculate frequency based on zero crossing average period
@@ -782,12 +782,12 @@ function App() {
             <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
               <XAxis dataKey="time" hide />
-              <YAxis domain={[-2500, 2500]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 5000]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
-              <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.startAt} ${startGripMv} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.stopAt} ${stopGripMv} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
+              <ReferenceLine y={startGripMv + 2500} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+                label={{ position: 'right', value: `${t.startAt} ${startGripMv + 2500} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
+              <ReferenceLine y={stopGripMv + 2500} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+                label={{ position: 'right', value: `${t.stopAt} ${stopGripMv + 2500} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
               <Line type="monotone" dataKey="value" stroke="var(--text-primary)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             </LineChart>
