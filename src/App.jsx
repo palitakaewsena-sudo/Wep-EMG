@@ -473,6 +473,7 @@ function App() {
 
       for (let line of lines) {
         line = line.trim();
+        console.log("BLE Received:", line); // DEBUG
         if (line !== "" && !isNaN(line)) {
           const rawVal = parseFloat(line); // Assuming ADC 0-1023
           lastRaw = rawVal;
