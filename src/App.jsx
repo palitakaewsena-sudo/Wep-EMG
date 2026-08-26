@@ -484,20 +484,25 @@ function App() {
           // Adjusts slowly to the real center voltage (starts at 2500)
           filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
           
-          // Signal centered at 0 for Oscilloscope view
+          // Signal centered at 0 
           const acMv = rawMv - filterRef.current.dcOffset; 
           
-          // Use rawMv for absolute Vmax and Vmin (includes the 2.5V shift)
-          if (rawMv > maxV) maxV = rawMv;
-          if (rawMv < minV) minV = rawMv;
+          // Apply Calibration to match Function Generator
+          // Function Generator inputs 1000 mVpp, ADC reads ~1686.2 mVpp
+          const VOLTAGE_CALIB = 1000.0 / 1686.2;
+          const calibratedMv = acMv * VOLTAGE_CALIB;
+
+          // Use calibratedMv for absolute Vmax and Vmin
+          if (calibratedMv > maxV) maxV = calibratedMv;
+          if (calibratedMv < minV) minV = calibratedMv;
 
           if (sessionRef.current.isActive) {
-            newPoints.push({ time: timeRef.current++, value: acMv, raw: rawVal, rawMv: rawMv });
+            newPoints.push({ time: timeRef.current++, value: calibratedMv, raw: rawVal, rawMv: rawMv, calibratedMv: calibratedMv });
 
-            // เช็ค rawMv เทียบกับ threshold + 2.5V (2500mV) offset ตามที่ผู้ใช้ต้องการ
-            if (!sessionRef.current.isGripping && rawMv >= sessionRef.current.startMv + 2500) {
+            // เช็ค calibratedMv เทียบกับ threshold (ไม่ต้อง + 2500 แล้ว เพราะหัก offset ออกแล้ว)
+            if (!sessionRef.current.isGripping && calibratedMv >= sessionRef.current.startMv) {
                sessionRef.current.isGripping = true;
-             } else if (sessionRef.current.isGripping && rawMv <= sessionRef.current.stopMv + 2500) {
+             } else if (sessionRef.current.isGripping && calibratedMv <= sessionRef.current.stopMv) {
                sessionRef.current.isGripping = false;
                // นับการกำเมื่อทำครบรอบ (เกินเกณฑ์ Start และตกลงมาต่ำกว่า Stop)
                newGripCount++;
@@ -519,8 +524,9 @@ function App() {
             let zcIndices = [];
             
             for (let i = 1; i < combined.length; i++) {
-              if (combined[i].rawMv > winMax) winMax = combined[i].rawMv;
-              if (combined[i].rawMv < winMin) winMin = combined[i].rawMv;
+              // Use value (which is now calibratedMv) for min/max
+              if (combined[i].value > winMax) winMax = combined[i].value;
+              if (combined[i].value < winMin) winMin = combined[i].value;
               
               // Record indices of positive-going zero crossings
               if (combined[i-1].value < 0 && combined[i].value >= 0) {
@@ -535,14 +541,15 @@ function App() {
             setCurrentVpp(winMax - winMin);
             
             // Calculate frequency based on zero crossing average period
-            // Assuming 50ms (0.05s) per sample as per the original code
+            // Calibrated sampling interval to 0.066s (~15.15Hz) to match Function Generator 5.0 Hz
+            const SAMPLING_INTERVAL = 0.066;
             if (zcIndices.length >= 2) {
               let totalPeriod = 0;
               for (let i = 1; i < zcIndices.length; i++) {
                 totalPeriod += (zcIndices[i] - zcIndices[i-1]);
               }
               const periodInSamples = totalPeriod / (zcIndices.length - 1);
-              const periodInSeconds = periodInSamples * 0.05; // 0.05s = 20Hz sampling rate
+              const periodInSeconds = periodInSamples * SAMPLING_INTERVAL;
               setCurrentFreq(1 / periodInSeconds);
             } else {
               setCurrentFreq(0);
