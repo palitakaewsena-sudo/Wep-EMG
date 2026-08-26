@@ -321,7 +321,7 @@ function App() {
   // Refs for real-time processing
   const bufferRef = useRef("");
   const timeRef = useRef(0);
-  const filterRef = useRef({ dcOffset: 2500 });
+  const filterRef = useRef({ dcOffset: 2500, freq: 5.0 });
 
   const sessionRef = useRef({ 
     isActive: false, 
@@ -487,10 +487,13 @@ function App() {
           // Signal centered at 0 
           const acMv = rawMv - filterRef.current.dcOffset; 
           
-          // Apply Calibration to match Function Generator
-          // Function Generator inputs 1000 mVpp, ADC reads ~1686.2 mVpp
-          const VOLTAGE_CALIB = 1000.0 / 1686.2;
-          const calibratedMv = acMv * VOLTAGE_CALIB;
+          // Dynamic Frequency Calibration (Inverse of hardware 3.0 Hz High-Pass Filter)
+          // Hardware Gain K ≈ 2.0. Baseline multiplier = 0.5. Cut-off fc ≈ 3.0 Hz.
+          const f = filterRef.current.freq; 
+          const fc = 3.0; 
+          const dynamicCalib = 0.5 * Math.sqrt(f*f + fc*fc) / f;
+          
+          const calibratedMv = acMv * dynamicCalib;
 
           // Use calibratedMv for absolute Vmax and Vmin
           if (calibratedMv > maxV) maxV = calibratedMv;
@@ -543,6 +546,7 @@ function App() {
             // Calculate frequency based on zero crossing average period
             // Calibrated sampling interval to 0.066s (~15.15Hz) to match Function Generator 5.0 Hz
             const SAMPLING_INTERVAL = 0.066;
+            let newFreq = filterRef.current.freq;
             if (zcIndices.length >= 2) {
               let totalPeriod = 0;
               for (let i = 1; i < zcIndices.length; i++) {
@@ -550,10 +554,20 @@ function App() {
               }
               const periodInSamples = totalPeriod / (zcIndices.length - 1);
               const periodInSeconds = periodInSamples * SAMPLING_INTERVAL;
-              setCurrentFreq(1 / periodInSeconds);
-            } else {
-              setCurrentFreq(0);
+              newFreq = 1 / periodInSeconds;
+            } else if (zcIndices.length === 0 && combined.length > 100) {
+              newFreq = 0;
             }
+            
+            // Clamp frequency to prevent extreme calibration values
+            if (newFreq < 0.5 && newFreq > 0) newFreq = 0.5;
+            if (newFreq > 50) newFreq = 50.0;
+            
+            // Update filterRef freq only if > 0 so that calibration doesn't blow up
+            if (newFreq > 0) {
+              filterRef.current.freq = newFreq;
+            }
+            setCurrentFreq(newFreq);
           }
           
           return combined;
