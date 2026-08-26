@@ -536,8 +536,8 @@ function App() {
             
             if (winMin === 5000) winMin = 0;
             if (winMax === -5000) winMax = 0;
-            setCurrentVmax(winMax);
-            setCurrentVmin(winMin);
+            setCurrentVmax(winMax + 2500);
+            setCurrentVmin(winMin + 2500);
             setCurrentVpp(winMax - winMin);
             
             // Calculate frequency based on zero crossing average period
