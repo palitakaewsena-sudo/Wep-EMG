@@ -487,20 +487,15 @@ function App() {
           // Signal centered at 0 
           const acMv = rawMv - filterRef.current.dcOffset; 
           
-          // Dynamic Frequency Calibration (Inverse of hardware 3.0 Hz High-Pass Filter)
-          // Hardware Gain K ≈ 2.0. Baseline multiplier = 0.5. Cut-off fc ≈ 3.0 Hz.
-          const f = filterRef.current.freq; 
-          const fc = 3.0; 
-          const dynamicCalib = 0.5 * Math.sqrt(f*f + fc*fc) / f;
-          
-          const calibratedMv = acMv * dynamicCalib;
+          // No software calibration. Display exact hardware measurements (matching Oscilloscope).
+          const calibratedMv = acMv;
 
           // Use calibratedMv for absolute Vmax and Vmin
           if (calibratedMv > maxV) maxV = calibratedMv;
           if (calibratedMv < minV) minV = calibratedMv;
 
           if (sessionRef.current.isActive) {
-            newPoints.push({ time: timeRef.current++, value: calibratedMv + 2500, zeroCenteredValue: calibratedMv, raw: rawVal, rawMv: rawMv, calibratedMv: calibratedMv });
+            newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv });
 
             // เช็ค calibratedMv เทียบกับ threshold (ไม่ต้อง + 2500 แล้ว เพราะหัก offset ออกแล้ว)
             if (!sessionRef.current.isGripping && calibratedMv >= sessionRef.current.startMv) {
@@ -784,10 +779,10 @@ function App() {
               <XAxis dataKey="time" hide />
               <YAxis domain={[0, 5000]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
-              <ReferenceLine y={startGripMv + 2500} stroke="var(--accent-teal)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.startAt} ${startGripMv + 2500} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv + 2500} stroke="var(--accent-orange)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.stopAt} ${stopGripMv + 2500} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
+              <ReferenceLine y={startGripMv + dcOffsetState} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+                label={{ position: 'right', value: `${t.startAt} ${(startGripMv + dcOffsetState).toFixed(0)} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
+              <ReferenceLine y={stopGripMv + dcOffsetState} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+                label={{ position: 'right', value: `${t.stopAt} ${(stopGripMv + dcOffsetState).toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
               <Line type="monotone" dataKey="value" stroke="var(--text-primary)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             </LineChart>
