@@ -330,6 +330,7 @@ function App() {
     stopMv: 880.0,
     isGripping: false,
     gripCount: 0,
+    lastGripTime: 0,
   });
 
   useEffect(() => {
@@ -559,21 +560,19 @@ function App() {
           // No software calibration. Display exact hardware measurements (matching Oscilloscope).
           const calibratedMv = acMv;
 
-          // Track Vmax/Vmin of AC signal (zero-centered) to match oscilloscope Pk-Pk
-          if (acMv > maxV) maxV = acMv;
-          if (acMv < minV) minV = acMv;
-
           if (sessionRef.current.isActive) {
             newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv });
 
-            // เช็ค calibratedMv เทียบกับ threshold (หัก offset ออกแล้ว)
-            if (!sessionRef.current.isGripping && calibratedMv >= sessionRef.current.startMv) {
+            const nowTime = Date.now();
+            const COOLDOWN_MS = 300; // Cooldown period for debounce
+
+            if (!sessionRef.current.isGripping && rawMv >= sessionRef.current.startMv && (nowTime - sessionRef.current.lastGripTime > COOLDOWN_MS)) {
                sessionRef.current.isGripping = true;
-             } else if (sessionRef.current.isGripping && calibratedMv <= sessionRef.current.stopMv) {
-               sessionRef.current.isGripping = false;
-               // นับการกำเมื่อทำครบรอบ (เกินเกณฑ์ Start และตกลงมาต่ำกว่า Stop)
+               sessionRef.current.lastGripTime = nowTime;
                newGripCount++;
                sessionRef.current.gripCount = newGripCount;
+             } else if (sessionRef.current.isGripping && rawMv < sessionRef.current.stopMv) {
+               sessionRef.current.isGripping = false;
              }
           }
         }
@@ -582,16 +581,22 @@ function App() {
       if (newPoints.length > 0) {
         setRawAdc(lastRaw);
         
-        // Update Vmax/Vmin/Vpp from the batch's AC values
-        if (maxV > -Infinity && minV < Infinity) {
-          setCurrentVmax(maxV);
-          setCurrentVmin(minV);
-          setCurrentVpp(maxV - minV);
-        }
-        
         if (sessionRef.current.isActive) {
           setEmgData(prevData => {
           const combined = [...prevData, ...newPoints].slice(-150);
+          
+          // Calculate Vmax, Vmin from the buffer (Window) dynamically
+          if (combined.length > 0) {
+            const bufferValues = combined.map(p => p.rawMv);
+            const winMax = Math.max(...bufferValues);
+            const winMin = Math.min(...bufferValues);
+            
+            setTimeout(() => {
+              setCurrentVmax(winMax);
+              setCurrentVmin(winMin);
+              setCurrentVpp(winMax - winMin);
+            }, 0);
+          }
           
           if (combined.length > 20) {
             let zcIndices = [];
@@ -848,10 +853,10 @@ function App() {
               <XAxis dataKey="time" hide />
               <YAxis domain={[0, 3300]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
-              <ReferenceLine y={startGripMv + dcOffsetState} stroke="var(--accent-teal)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.startAt} ${(startGripMv + dcOffsetState).toFixed(0)} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv + dcOffsetState} stroke="var(--accent-orange)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.stopAt} ${(stopGripMv + dcOffsetState).toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
+              <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+                label={{ position: 'right', value: `${t.startAt} ${startGripMv.toFixed(0)} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
+              <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+                label={{ position: 'right', value: `${t.stopAt} ${stopGripMv.toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
               <Line type="monotone" dataKey="value" stroke="var(--text-primary)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             </LineChart>
@@ -974,14 +979,14 @@ function App() {
                   <span>{t.setStartGrip}</span>
                   <span style={{ background: 'white', padding: '2px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>{startGripMv.toFixed(1)}</span>
                 </div>
-                <input type="range" className="range-slider" min="0" max="2500" step="10" value={startGripMv} onChange={e => setStartGripMv(parseFloat(e.target.value))} />
+                <input type="range" className="range-slider" min="0" max="3300" step="10" value={startGripMv} onChange={e => setStartGripMv(parseFloat(e.target.value))} />
               </div>
               <div className="slider-col">
                 <div className="slider-label orange">
                   <span>{t.setStopGrip}</span>
                   <span style={{ background: 'white', padding: '2px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>{stopGripMv.toFixed(1)}</span>
                 </div>
-                <input type="range" className="range-slider orange" min="0" max="2500" step="10" value={stopGripMv} onChange={e => setStopGripMv(parseFloat(e.target.value))} />
+                <input type="range" className="range-slider orange" min="0" max="3300" step="10" value={stopGripMv} onChange={e => setStopGripMv(parseFloat(e.target.value))} />
               </div>
             </div>
           </div>
