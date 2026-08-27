@@ -550,8 +550,8 @@ function App() {
           const rawVal = parseFloat(line); // Assuming ADC 12-bit
           lastRaw = rawVal;
           
-          // ESP32 12-bit ADC mapped to 3300mV
-          const rawMv = (rawVal / 4095) * 3300; 
+          // ESP32 12-bit ADC Dynamic Polynomial Calibration (Non-linear compensation)
+          const rawMv = (0.000000156 * Math.pow(rawVal, 3)) - (0.00048 * Math.pow(rawVal, 2)) + (1.05 * rawVal) + 150; 
           
           // Dynamic DC offset tracking (High-pass filter for baseline wander)
           // Adjusts slowly to the real center voltage (starts at 1650)
