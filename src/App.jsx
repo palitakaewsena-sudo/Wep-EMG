@@ -430,11 +430,18 @@ function App() {
       return;
     }
 
+    // Known BLE Service/Characteristic UUIDs to try
+    const KNOWN_SERVICES = [
+      { service: '0000ffe0-0000-1000-8000-00805f9b34fb', char: '0000ffe1-0000-1000-8000-00805f9b34fb' }, // HM-10 / many ESP32
+      { service: '6e400001-b5a3-f393-e0a9-e50e24dcca9e', char: '6e400003-b5a3-f393-e0a9-e50e24dcca9e' }, // Nordic UART (NUS) TX
+      { service: '4fafc201-1fb5-459e-8fcc-c5c9c331914b', char: 'beb5483e-36e1-4688-b7f5-ea07361b26a8' }, // Common ESP32 example
+    ];
+
     try {
       if (!navigator.bluetooth) throw new Error("Web Bluetooth API is not supported.");
       const btDevice = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
-        optionalServices: [SERVICE_UUID]
+        optionalServices: KNOWN_SERVICES.map(s => s.service)
       });
 
       const server = await btDevice.gatt.connect();
@@ -445,13 +452,59 @@ function App() {
         setCharacteristic(null);
       });
 
-      const service = await server.getPrimaryService(SERVICE_UUID);
-      const char = await service.getCharacteristic(CHARACTERISTIC_UUID);
-      setCharacteristic(char);
-      setDevice(btDevice);
-      setIsConnected(true);
+      // Try each known service UUID
+      let foundChar = null;
+      for (const known of KNOWN_SERVICES) {
+        try {
+          const service = await server.getPrimaryService(known.service);
+          foundChar = await service.getCharacteristic(known.char);
+          console.log(`Connected via service: ${known.service}`);
+          break;
+        } catch (e) {
+          console.log(`Service ${known.service} not found, trying next...`);
+        }
+      }
+
+      // If none of the known UUIDs worked, auto-discover
+      if (!foundChar) {
+        console.log("Known services not found, auto-discovering...");
+        try {
+          const services = await server.getPrimaryServices();
+          for (const service of services) {
+            try {
+              const chars = await service.getCharacteristics();
+              for (const c of chars) {
+                if (c.properties.notify || c.properties.read) {
+                  foundChar = c;
+                  console.log(`Auto-discovered service: ${service.uuid}, char: ${c.uuid}`);
+                  break;
+                }
+              }
+              if (foundChar) break;
+            } catch (e) { /* skip this service */ }
+          }
+        } catch (e) {
+          console.error("Auto-discovery failed:", e);
+        }
+      }
+
+      if (foundChar) {
+        setCharacteristic(foundChar);
+        setDevice(btDevice);
+        setIsConnected(true);
+      } else {
+        alert(lang === 'th' 
+          ? 'ไม่พบ Service/Characteristic ที่รองรับบนอุปกรณ์นี้ กรุณาตรวจสอบโค้ดฝั่ง ESP32' 
+          : 'No supported Service/Characteristic found on this device. Check ESP32 code.');
+        if (btDevice.gatt.connected) btDevice.gatt.disconnect();
+      }
     } catch (error) {
       console.error(error);
+      if (error.name !== 'NotFoundError') {
+        alert(lang === 'th' 
+          ? `เชื่อมต่อไม่สำเร็จ: ${error.message}` 
+          : `Connection failed: ${error.message}`);
+      }
     }
   };
 
