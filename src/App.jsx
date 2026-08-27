@@ -331,6 +331,7 @@ function App() {
     isGripping: false,
     gripCount: 0,
     lastGripTime: 0,
+    rawBuffer: [],
   });
 
   useEffect(() => {
@@ -379,6 +380,8 @@ function App() {
     setGripCount(0);
     sessionRef.current.gripCount = 0;
     sessionRef.current.isGripping = false;
+    sessionRef.current.lastGripTime = 0;
+    sessionRef.current.rawBuffer = [];
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
   };
@@ -564,6 +567,8 @@ function App() {
             newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv });
 
             const nowTime = Date.now();
+            sessionRef.current.rawBuffer.push({ timeMs: nowTime, value: rawMv });
+
             const COOLDOWN_MS = 300; // Cooldown period for debounce
 
             if (!sessionRef.current.isGripping && rawMv >= sessionRef.current.startMv && (nowTime - sessionRef.current.lastGripTime > COOLDOWN_MS)) {
@@ -578,25 +583,31 @@ function App() {
         }
       }
 
+      if (sessionRef.current.isActive) {
+        const purgeTime = Date.now();
+        const cutoff = purgeTime - 2000; // 2 seconds window
+        
+        // Remove data older than 2 seconds
+        sessionRef.current.rawBuffer = sessionRef.current.rawBuffer.filter(p => p.timeMs >= cutoff);
+        
+        // Calculate Vmax, Vmin from 2-second time window dynamically
+        if (sessionRef.current.rawBuffer.length > 0) {
+          const bufferValues = sessionRef.current.rawBuffer.map(p => p.value);
+          const winMax = Math.max(...bufferValues);
+          const winMin = Math.min(...bufferValues);
+          
+          setCurrentVmax(winMax);
+          setCurrentVmin(winMin);
+          setCurrentVpp(winMax - winMin);
+        }
+      }
+
       if (newPoints.length > 0) {
         setRawAdc(lastRaw);
         
         if (sessionRef.current.isActive) {
           setEmgData(prevData => {
           const combined = [...prevData, ...newPoints].slice(-150);
-          
-          // Calculate Vmax, Vmin from the buffer (Window) dynamically
-          if (combined.length > 0) {
-            const bufferValues = combined.map(p => p.rawMv);
-            const winMax = Math.max(...bufferValues);
-            const winMin = Math.min(...bufferValues);
-            
-            setTimeout(() => {
-              setCurrentVmax(winMax);
-              setCurrentVmin(winMin);
-              setCurrentVpp(winMax - winMin);
-            }, 0);
-          }
           
           if (combined.length > 20) {
             let zcIndices = [];
