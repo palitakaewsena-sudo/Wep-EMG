@@ -639,12 +639,17 @@ function App() {
     };
 
     characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
-    characteristic.startNotifications();
+    characteristic.startNotifications().catch(error => {
+      console.error("Start Notifications Error:", error);
+      alert(lang === 'th' 
+        ? `ไม่สามารถรับส่งข้อมูลได้ (startNotifications error): ${error.message}\n\n* กรุณาเช็ค ESP32 ว่าใส่ BLECharacteristic::PROPERTY_NOTIFY และ addDescriptor(new BLE2902()) ถูกต้องหรือไม่` 
+        : `Notification error: ${error.message}`);
+    });
 
     return () => {
       characteristic.removeEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
     };
-  }, [characteristic]);
+  }, [characteristic, lang]);
 
   const [searchQuery, setSearchQuery] = useState('');
   
