@@ -19,8 +19,8 @@ const i18n = {
     tabSettings: "การตั้งค่า",
     tabHistory: "ประวัติ",
     notConnected: "ยังไม่เชื่อมต่อ",
-    deviceSub: "อุปกรณ์ EMG ผ่าน BLE (HM-10)",
-    connectBtn: "เชื่อมต่อ Bluetooth",
+    deviceSub: "อุปกรณ์ EMG ผ่าน WiFi (ESP32)",
+    connectBtn: "เชื่อมต่อ WiFi",
     disconnectBtn: "ยกเลิกการเชื่อมต่อ",
     emgVal: "ค่า EMG",
     emgSub: "mV Vpp · Raw ADC: 0",
@@ -32,7 +32,7 @@ const i18n = {
     timeVal: "เวลาคงเหลือ",
     timeSub: "MM:SS",
     statusVal: "สถานะ",
-    statusSub: "- BLE",
+    statusSub: "- WiFi",
     statusReady: "พร้อมใช้งาน",
     statusWait: "รอเชื่อมต่อ",
     statusTraining: "กำลังฝึก",
@@ -114,8 +114,8 @@ const i18n = {
     tabSettings: "Settings",
     tabHistory: "History",
     notConnected: "Not Connected",
-    deviceSub: "EMG device via BLE (HM-10)",
-    connectBtn: "Connect Bluetooth",
+    deviceSub: "EMG device via WiFi (ESP32)",
+    connectBtn: "Connect WiFi",
     disconnectBtn: "Disconnect",
     emgVal: "EMG Value",
     emgSub: "mV Vpp · Raw ADC: 0",
@@ -127,7 +127,7 @@ const i18n = {
     timeVal: "Time Left",
     timeSub: "MM:SS",
     statusVal: "Status",
-    statusSub: "- BLE",
+    statusSub: "- WiFi",
     statusReady: "Ready",
     statusWait: "Waiting",
     statusTraining: "Training",
@@ -291,10 +291,10 @@ function App() {
   const [isCustomTarget, setIsCustomTarget] = useState(false);
   const [customTargetInput, setCustomTargetInput] = useState(20);
 
-  // BLE & Connection State
+  // WiFi & Connection State
   const [isConnected, setIsConnected] = useState(false);
-  const [device, setDevice] = useState(null);
-  const [characteristic, setCharacteristic] = useState(null);
+  const [wsUrl, setWsUrl] = useState('ws://192.168.4.1:81');
+  const wsRef = useRef(null);
 
   // Session & Training State
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -308,7 +308,7 @@ function App() {
   const [currentVmin, setCurrentVmin] = useState(0);
   const [currentFreq, setCurrentFreq] = useState(0);
   const [rawAdc, setRawAdc] = useState(0);
-  const [dcOffsetState, setDcOffsetState] = useState(2500);
+  const [dcOffsetState, setDcOffsetState] = useState(1650);
 
   // Settings State
   const [sessionTimePreset, setSessionTimePreset] = useState(5);
@@ -321,7 +321,7 @@ function App() {
   // Refs for real-time processing
   const bufferRef = useRef("");
   const timeRef = useRef(0);
-  const filterRef = useRef({ dcOffset: 2500, freq: 5.0 });
+  const filterRef = useRef({ dcOffset: 1650, freq: 5.0 });
 
   const sessionRef = useRef({ 
     isActive: false, 
@@ -419,169 +419,155 @@ function App() {
     });
   }
 
-  const handleConnect = async () => {
-    if (isConnected && device) {
-      if (device.gatt.connected) device.gatt.disconnect();
+  const handleConnect = () => {
+    if (isConnected && wsRef.current) {
+      wsRef.current.close();
       setIsConnected(false);
-      setDevice(null);
-      setCharacteristic(null);
       setIsSessionActive(false);
+      wsRef.current = null;
       return;
     }
 
     try {
-      if (!navigator.bluetooth) throw new Error("Web Bluetooth API is not supported.");
-      const btDevice = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: [SERVICE_UUID]
-      });
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-      const server = await btDevice.gatt.connect();
-      btDevice.addEventListener('gattserverdisconnected', () => {
+      ws.onopen = () => {
+        setIsConnected(true);
+      };
+
+      ws.onclose = () => {
         setIsConnected(false);
         setIsSessionActive(false);
-        setDevice(null);
-        setCharacteristic(null);
-      });
+        wsRef.current = null;
+      };
 
-      const service = await server.getPrimaryService(SERVICE_UUID);
-      const char = await service.getCharacteristic(CHARACTERISTIC_UUID);
-      setCharacteristic(char);
-      setDevice(btDevice);
-      setIsConnected(true);
+      ws.onerror = (error) => {
+        console.error("WebSocket Error:", error);
+        setIsConnected(false);
+        setIsSessionActive(false);
+        wsRef.current = null;
+      };
+
+      ws.onmessage = (event) => {
+        const textChunk = event.data;
+        bufferRef.current += textChunk;
+
+        let lines = bufferRef.current.split('\n');
+        bufferRef.current = lines.pop(); 
+        
+        let newPoints = [];
+        let newGripCount = sessionRef.current.gripCount;
+        let lastRaw = 0;
+        let maxV = 0, minV = 5000;
+
+        for (let line of lines) {
+          line = line.trim();
+          if (line !== "" && !isNaN(line)) {
+            const rawVal = parseFloat(line); // Assuming ADC 12-bit
+            lastRaw = rawVal;
+            
+            // ESP32 12-bit ADC mapped to 3300mV
+            const rawMv = (rawVal / 4095) * 3300; 
+            
+            // Dynamic DC offset tracking (High-pass filter for baseline wander)
+            // Adjusts slowly to the real center voltage (starts at 1650)
+            filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
+            
+            // Signal centered at 0 
+            const acMv = rawMv - filterRef.current.dcOffset; 
+            
+            // No software calibration. Display exact hardware measurements (matching Oscilloscope).
+            const calibratedMv = acMv;
+
+            // Use calibratedMv for absolute Vmax and Vmin
+            if (calibratedMv > maxV) maxV = calibratedMv;
+            if (calibratedMv < minV) minV = calibratedMv;
+
+            if (sessionRef.current.isActive) {
+              newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv });
+
+              // เช็ค calibratedMv เทียบกับ threshold (หัก offset ออกแล้ว)
+              if (!sessionRef.current.isGripping && calibratedMv >= sessionRef.current.startMv) {
+                 sessionRef.current.isGripping = true;
+               } else if (sessionRef.current.isGripping && calibratedMv <= sessionRef.current.stopMv) {
+                 sessionRef.current.isGripping = false;
+                 // นับการกำเมื่อทำครบรอบ (เกินเกณฑ์ Start และตกลงมาต่ำกว่า Stop)
+                 newGripCount++;
+                 sessionRef.current.gripCount = newGripCount;
+               }
+            }
+          }
+        }
+
+        if (newPoints.length > 0) {
+          setRawAdc(lastRaw);
+          
+          if (sessionRef.current.isActive) {
+            setEmgData(prevData => {
+            const combined = [...prevData, ...newPoints].slice(-150);
+            
+            if (combined.length > 20) {
+              let winMax = -5000, winMin = 5000;
+              let zcIndices = [];
+              
+              for (let i = 1; i < combined.length; i++) {
+                // Use value (which now includes +1650 offset) for min/max display
+                if (combined[i].value > winMax) winMax = combined[i].value;
+                if (combined[i].value < winMin) winMin = combined[i].value;
+                
+                // Record indices of positive-going zero crossings (must use zero-centered data)
+                if (combined[i-1].zeroCenteredValue < 0 && combined[i].zeroCenteredValue >= 0) {
+                  zcIndices.push(combined[i].time);
+                }
+              }
+              
+              if (winMin === 5000) winMin = 0;
+              if (winMax === -5000) winMax = 0;
+              setCurrentVmax(winMax);
+              setCurrentVmin(winMin);
+              setCurrentVpp(winMax - winMin);
+              
+              // Calculate frequency based on zero crossing average period
+              // Calibrated sampling interval to 0.066s (~15.15Hz) to match Function Generator 5.0 Hz
+              const SAMPLING_INTERVAL = 0.066;
+              let newFreq = filterRef.current.freq;
+              if (zcIndices.length >= 2) {
+                let totalPeriod = 0;
+                for (let i = 1; i < zcIndices.length; i++) {
+                  totalPeriod += (zcIndices[i] - zcIndices[i-1]);
+                }
+                const periodInSamples = totalPeriod / (zcIndices.length - 1);
+                const periodInSeconds = periodInSamples * SAMPLING_INTERVAL;
+                newFreq = 1 / periodInSeconds;
+              } else if (zcIndices.length === 0 && combined.length > 100) {
+                newFreq = 0;
+              }
+              
+              // Clamp frequency to prevent extreme calibration values
+              if (newFreq < 0.5 && newFreq > 0) newFreq = 0.5;
+              if (newFreq > 50) newFreq = 50.0;
+              
+              // Update filterRef freq only if > 0 so that calibration doesn't blow up
+              if (newFreq > 0) {
+                filterRef.current.freq = newFreq;
+              }
+              setCurrentFreq(newFreq);
+            }
+            
+            return combined;
+          });
+          setDcOffsetState(filterRef.current.dcOffset);
+          }
+
+          if (sessionRef.current.isActive && newGripCount !== gripCount) setGripCount(newGripCount);
+        }
+      };
+
     } catch (error) {
       console.error(error);
     }
   };
-
-  useEffect(() => {
-    if (!characteristic) return;
-
-    const handleCharacteristicValueChanged = (event) => {
-      const value = event.target.value;
-      const decoder = new TextDecoder('utf-8');
-      const textChunk = decoder.decode(value);
-      bufferRef.current += textChunk;
-
-      let lines = bufferRef.current.split('\n');
-      bufferRef.current = lines.pop(); 
-      
-      let newPoints = [];
-      let newGripCount = sessionRef.current.gripCount;
-      let lastRaw = 0;
-      let maxV = 0, minV = 5000;
-
-      for (let line of lines) {
-        line = line.trim();
-        console.log("BLE Received:", line); // DEBUG
-        if (line !== "" && !isNaN(line)) {
-          const rawVal = parseFloat(line); // Assuming ADC 0-1023
-          lastRaw = rawVal;
-          
-          // 2.5V shifting circuit (assuming 5V reference ADC)
-          const rawMv = (rawVal / 1023) * 5000; 
-          
-          // Dynamic DC offset tracking (High-pass filter for baseline wander)
-          // Adjusts slowly to the real center voltage (starts at 2500)
-          filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
-          
-          // Signal centered at 0 
-          const acMv = rawMv - filterRef.current.dcOffset; 
-          
-          // No software calibration. Display exact hardware measurements (matching Oscilloscope).
-          const calibratedMv = acMv;
-
-          // Use calibratedMv for absolute Vmax and Vmin
-          if (calibratedMv > maxV) maxV = calibratedMv;
-          if (calibratedMv < minV) minV = calibratedMv;
-
-          if (sessionRef.current.isActive) {
-            newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv });
-
-            // เช็ค calibratedMv เทียบกับ threshold (ไม่ต้อง + 2500 แล้ว เพราะหัก offset ออกแล้ว)
-            if (!sessionRef.current.isGripping && calibratedMv >= sessionRef.current.startMv) {
-               sessionRef.current.isGripping = true;
-             } else if (sessionRef.current.isGripping && calibratedMv <= sessionRef.current.stopMv) {
-               sessionRef.current.isGripping = false;
-               // นับการกำเมื่อทำครบรอบ (เกินเกณฑ์ Start และตกลงมาต่ำกว่า Stop)
-               newGripCount++;
-               sessionRef.current.gripCount = newGripCount;
-             }
-          }
-        }
-      }
-
-      if (newPoints.length > 0) {
-        setRawAdc(lastRaw);
-        
-        if (sessionRef.current.isActive) {
-          setEmgData(prevData => {
-          const combined = [...prevData, ...newPoints].slice(-150);
-          
-          if (combined.length > 20) {
-            let winMax = -5000, winMin = 5000;
-            let zcIndices = [];
-            
-            for (let i = 1; i < combined.length; i++) {
-              // Use value (which now includes +2500 offset) for min/max display
-              if (combined[i].value > winMax) winMax = combined[i].value;
-              if (combined[i].value < winMin) winMin = combined[i].value;
-              
-              // Record indices of positive-going zero crossings (must use zero-centered data)
-              if (combined[i-1].zeroCenteredValue < 0 && combined[i].zeroCenteredValue >= 0) {
-                zcIndices.push(combined[i].time);
-              }
-            }
-            
-            if (winMin === 5000) winMin = 0;
-            if (winMax === -5000) winMax = 0;
-            setCurrentVmax(winMax);
-            setCurrentVmin(winMin);
-            setCurrentVpp(winMax - winMin);
-            
-            // Calculate frequency based on zero crossing average period
-            // Calibrated sampling interval to 0.066s (~15.15Hz) to match Function Generator 5.0 Hz
-            const SAMPLING_INTERVAL = 0.066;
-            let newFreq = filterRef.current.freq;
-            if (zcIndices.length >= 2) {
-              let totalPeriod = 0;
-              for (let i = 1; i < zcIndices.length; i++) {
-                totalPeriod += (zcIndices[i] - zcIndices[i-1]);
-              }
-              const periodInSamples = totalPeriod / (zcIndices.length - 1);
-              const periodInSeconds = periodInSamples * SAMPLING_INTERVAL;
-              newFreq = 1 / periodInSeconds;
-            } else if (zcIndices.length === 0 && combined.length > 100) {
-              newFreq = 0;
-            }
-            
-            // Clamp frequency to prevent extreme calibration values
-            if (newFreq < 0.5 && newFreq > 0) newFreq = 0.5;
-            if (newFreq > 50) newFreq = 50.0;
-            
-            // Update filterRef freq only if > 0 so that calibration doesn't blow up
-            if (newFreq > 0) {
-              filterRef.current.freq = newFreq;
-            }
-            setCurrentFreq(newFreq);
-          }
-          
-          return combined;
-        });
-        setDcOffsetState(filterRef.current.dcOffset);
-        }
-
-        if (sessionRef.current.isActive && newGripCount !== gripCount) setGripCount(newGripCount);
-      }
-    };
-
-    characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
-    characteristic.startNotifications();
-
-    return () => {
-      characteristic.removeEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
-    };
-  }, [characteristic]);
 
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -726,11 +712,21 @@ function App() {
             {isConnected ? 'เชื่อมต่อแล้ว' : t.notConnected}
           </h3>
           <div className="subtitle" style={{ fontSize: '1.1rem' }}>{t.deviceSub}</div>
+          {!isConnected && (
+            <input 
+              type="text" 
+              value={wsUrl} 
+              onChange={(e) => setWsUrl(e.target.value)} 
+              className="form-control" 
+              style={{ marginTop: '1rem', textAlign: 'center', maxWidth: '300px' }} 
+              placeholder="ws://192.168.4.1:81"
+            />
+          )}
         </div>
         <button 
           className={`btn ${isConnected ? 'btn-outline' : 'btn-teal'}`} 
           onClick={handleConnect}
-          style={{ borderRadius: '24px', padding: '0.75rem 2.5rem', fontSize: '1.1rem' }}
+          style={{ borderRadius: '24px', padding: '0.75rem 2.5rem', fontSize: '1.1rem', marginTop: '1rem' }}
         >
           {isConnected ? t.disconnectBtn : t.connectBtn}
         </button>
@@ -778,7 +774,7 @@ function App() {
             <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
               <XAxis dataKey="time" hide />
-              <YAxis domain={[0, 5000]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 3300]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
               <ReferenceLine y={startGripMv + dcOffsetState} stroke="var(--accent-teal)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.startAt} ${(startGripMv + dcOffsetState).toFixed(0)} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
