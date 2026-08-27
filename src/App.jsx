@@ -322,6 +322,7 @@ function App() {
   const bufferRef = useRef("");
   const timeRef = useRef(0);
   const filterRef = useRef({ dcOffset: 1650, freq: 5.0 });
+  const timestampRef = useRef({ lastTime: 0, sampleCount: 0, measuredInterval: 0.002 });
 
   const sessionRef = useRef({ 
     isActive: false, 
@@ -469,7 +470,21 @@ function App() {
       let newPoints = [];
       let newGripCount = sessionRef.current.gripCount;
       let lastRaw = 0;
-      let maxV = 0, minV = 5000;
+      let maxV = -Infinity, minV = Infinity;
+
+      // Measure real sampling rate
+      const now = performance.now();
+      const numSamples = lines.filter(l => l.trim() !== "" && !isNaN(l.trim())).length;
+      if (numSamples > 0 && timestampRef.current.lastTime > 0) {
+        const dtMs = now - timestampRef.current.lastTime;
+        if (dtMs > 0) {
+          const intervalSec = (dtMs / 1000) / numSamples;
+          // Smooth the measured interval (EMA)
+          timestampRef.current.measuredInterval = 
+            timestampRef.current.measuredInterval * 0.7 + intervalSec * 0.3;
+        }
+      }
+      timestampRef.current.lastTime = now;
 
       for (let line of lines) {
         line = line.trim();
@@ -491,9 +506,9 @@ function App() {
           // No software calibration. Display exact hardware measurements (matching Oscilloscope).
           const calibratedMv = acMv;
 
-          // Use calibratedMv for absolute Vmax and Vmin
-          if (calibratedMv > maxV) maxV = calibratedMv;
-          if (calibratedMv < minV) minV = calibratedMv;
+          // Track Vmax/Vmin of AC signal (zero-centered) to match oscilloscope Pk-Pk
+          if (acMv > maxV) maxV = acMv;
+          if (acMv < minV) minV = acMv;
 
           if (sessionRef.current.isActive) {
             newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv });
@@ -514,34 +529,29 @@ function App() {
       if (newPoints.length > 0) {
         setRawAdc(lastRaw);
         
+        // Update Vmax/Vmin/Vpp from the batch's AC values
+        if (maxV > -Infinity && minV < Infinity) {
+          setCurrentVmax(maxV);
+          setCurrentVmin(minV);
+          setCurrentVpp(maxV - minV);
+        }
+        
         if (sessionRef.current.isActive) {
           setEmgData(prevData => {
           const combined = [...prevData, ...newPoints].slice(-150);
           
           if (combined.length > 20) {
-            let winMax = -5000, winMin = 5000;
             let zcIndices = [];
             
             for (let i = 1; i < combined.length; i++) {
-              // Use value (which now includes +1650 offset) for min/max display
-              if (combined[i].value > winMax) winMax = combined[i].value;
-              if (combined[i].value < winMin) winMin = combined[i].value;
-              
               // Record indices of positive-going zero crossings (must use zero-centered data)
               if (combined[i-1].zeroCenteredValue < 0 && combined[i].zeroCenteredValue >= 0) {
                 zcIndices.push(combined[i].time);
               }
             }
             
-            if (winMin === 5000) winMin = 0;
-            if (winMax === -5000) winMax = 0;
-            setCurrentVmax(winMax);
-            setCurrentVmin(winMin);
-            setCurrentVpp(winMax - winMin);
-            
-            // Calculate frequency based on zero crossing average period
-            // Calibrated sampling interval to 0.066s (~15.15Hz) to match Function Generator 5.0 Hz
-            const SAMPLING_INTERVAL = 0.066;
+            // Calculate frequency using dynamically measured sampling interval
+            const SAMPLING_INTERVAL = timestampRef.current.measuredInterval;
             let newFreq = filterRef.current.freq;
             if (zcIndices.length >= 2) {
               let totalPeriod = 0;
@@ -555,9 +565,9 @@ function App() {
               newFreq = 0;
             }
             
-            // Clamp frequency to prevent extreme calibration values
+            // Clamp frequency to prevent extreme values
             if (newFreq < 0.5 && newFreq > 0) newFreq = 0.5;
-            if (newFreq > 50) newFreq = 50.0;
+            if (newFreq > 200) newFreq = 200.0;
             
             // Update filterRef freq only if > 0 so that calibration doesn't blow up
             if (newFreq > 0) {
