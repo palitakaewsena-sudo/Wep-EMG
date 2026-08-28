@@ -607,19 +607,23 @@ function App() {
           const acMv = rawMv - filterRef.current.dcOffset;
 
           // 3. Notch Filter (Moving Average 10 samples for 50Hz/60Hz noise)
+          // NOTE: Only used for Freq/ZCR/telemetry. NOT used for peak detection because it suppresses 50Hz.
           sessionRef.current.maBuffer.push(acMv);
           if (sessionRef.current.maBuffer.length > 10) {
             sessionRef.current.maBuffer.shift();
           }
           const filteredMv = sessionRef.current.maBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.maBuffer.length;
 
-          // 4. Signal Envelope (Moving Average on Absolute AC for smoother peak detection)
-          sessionRef.current.envelopeBuffer.push(Math.abs(filteredMv));
-          if (sessionRef.current.envelopeBuffer.length > 15) { // 15 samples = 30ms smoothing (fast response)
+          // 4. Signal Envelope (Moving Average on Raw Absolute AC for accurate peak detection)
+          sessionRef.current.envelopeBuffer.push(Math.abs(acMv)); // Use raw AC directly
+          if (sessionRef.current.envelopeBuffer.length > 25) { // 25 samples = 50ms smoothing
             sessionRef.current.envelopeBuffer.shift();
           }
           const envelopeMa = sessionRef.current.envelopeBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.envelopeBuffer.length;
-          const envelopeBaseline = envelopeMa + filterRef.current.dcOffset;
+          
+          // Multiply by 1.57 (pi/2) to approximate peak amplitude of a wave from its average absolute value
+          const envelopePeak = envelopeMa * 1.57;
+          const current_voltage_mV = envelopePeak + filterRef.current.dcOffset;
           
           // Debug UI update
           if (debugTextRef.current) {
@@ -627,11 +631,11 @@ function App() {
             if (sessionRef.current.gripState === 1) stateName = "GRIPPING";
             else if (sessionRef.current.gripState === 2) stateName = "COOLDOWN";
             
-            debugTextRef.current.innerText = `State: ${stateName} | Env: ${envelopeBaseline.toFixed(0)}mV | Thr: ${sessionRef.current.startMv.toFixed(0)}mV`;
+            debugTextRef.current.innerText = `State: ${stateName} | Env: ${current_voltage_mV.toFixed(0)}mV | Thr: ${sessionRef.current.startMv.toFixed(0)}mV`;
           }
           
           if (calibRef.current.isActive) {
-            calibRef.current.rawBuffer.push(envelopeBaseline); // Calibrate using envelope instead of raw
+            calibRef.current.rawBuffer.push(current_voltage_mV); // Calibrate using matching envelope voltage
           }
 
           // Always push to sliding window for telemetry (500 samples)
@@ -645,13 +649,13 @@ function App() {
             
             // 3-State Machine for Grip Counting
             if (sessionRef.current.gripState === 0) { // IDLE
-              if (envelopeBaseline >= sessionRef.current.startMv) {
+              if (current_voltage_mV >= sessionRef.current.startMv) {
                 sessionRef.current.gripState = 1;
                 newGripCount++;
                 sessionRef.current.gripCount = newGripCount;
               }
             } else if (sessionRef.current.gripState === 1) { // GRIPPING
-              if (envelopeBaseline <= sessionRef.current.stopMv) {
+              if (current_voltage_mV <= sessionRef.current.stopMv) {
                 sessionRef.current.gripState = 2;
                 sessionRef.current.releaseTime = now;
               }
