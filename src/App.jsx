@@ -338,13 +338,15 @@ function App() {
     isActive: false, 
     startMv: 978.0, 
     stopMv: 880.0,
-    isGripping: false,
+    gripState: 0,
     gripCount: 0,
     lastGripTime: 0,
     rawBuffer: [],
     envelopeBuffer: [],
     currentEnvelope: 0,
-    releaseStartTime: 0,
+    releaseTime: 0,
+    maBuffer: [],
+    emaValue: 0,
   });
 
   useEffect(() => {
@@ -434,12 +436,14 @@ function App() {
     if (!isConnected) return;
     setGripCount(0);
     sessionRef.current.gripCount = 0;
-    sessionRef.current.isGripping = false;
+    sessionRef.current.gripState = 0;
     sessionRef.current.lastGripTime = 0;
     sessionRef.current.rawBuffer = [];
     sessionRef.current.envelopeBuffer = [];
     sessionRef.current.currentEnvelope = 0;
-    sessionRef.current.releaseStartTime = 0;
+    sessionRef.current.releaseTime = 0;
+    sessionRef.current.maBuffer = [];
+    sessionRef.current.emaValue = 0;
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
     setEmgData(Array.from({ length: 300 }, (_, i) => ({ time: i, rawMv: 0 })));
@@ -593,11 +597,27 @@ function App() {
           const rawVal = parseFloat(line); // Assuming ADC 12-bit
           lastRaw = rawVal;
           
-          // 1. แปลงค่าแรงดันดิบตรงๆ (Direct Raw ADC to Voltage) ไม่มี Gain/Scale Factor
-          const rawMv = (rawVal / 4095.0) * 3300.0;
+          // 1. แปลงค่าแรงดันดิบตรงๆ (Direct Raw ADC to Voltage) + Scale ชดเชย (1.11)
+          const rawMv = (rawVal / 4095.0) * 3300.0 * 1.11;
+
+          // 2. High-pass filter (DC Offset tracking)
+          filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
+          const acMv = rawMv - filterRef.current.dcOffset;
+
+          // 3. Notch Filter (Moving Average 10 samples for 50Hz/60Hz noise)
+          sessionRef.current.maBuffer.push(acMv);
+          if (sessionRef.current.maBuffer.length > 10) {
+            sessionRef.current.maBuffer.shift();
+          }
+          const filteredMv = sessionRef.current.maBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.maBuffer.length;
+
+          // 4. Signal Envelope (EMA)
+          const alpha = 0.1; // Smoothing factor
+          sessionRef.current.emaValue = (alpha * Math.abs(filteredMv)) + ((1 - alpha) * sessionRef.current.emaValue);
+          const envelopeBaseline = sessionRef.current.emaValue + filterRef.current.dcOffset;
           
           if (calibRef.current.isActive) {
-            calibRef.current.rawBuffer.push(rawMv);
+            calibRef.current.rawBuffer.push(envelopeBaseline); // Calibrate using envelope instead of raw
           }
 
           // Always push to sliding window for telemetry (500 samples)
@@ -607,14 +627,25 @@ function App() {
           }
 
           if (sessionRef.current.isActive) {
-            // Pure State Machine - Dual Threshold Grip Counting using RAW values
-            if (rawMv >= sessionRef.current.startMv && !sessionRef.current.isGripping) {
-               sessionRef.current.isGripping = true;
-               newGripCount++;
-               sessionRef.current.gripCount = newGripCount;
-             } else if (rawMv <= sessionRef.current.stopMv && sessionRef.current.isGripping) {
-               sessionRef.current.isGripping = false;
-             }
+            const now = Date.now();
+            
+            // 3-State Machine for Grip Counting
+            if (sessionRef.current.gripState === 0) { // IDLE
+              if (envelopeBaseline >= sessionRef.current.startMv) {
+                sessionRef.current.gripState = 1;
+                newGripCount++;
+                sessionRef.current.gripCount = newGripCount;
+              }
+            } else if (sessionRef.current.gripState === 1) { // GRIPPING
+              if (envelopeBaseline <= sessionRef.current.stopMv) {
+                sessionRef.current.gripState = 2;
+                sessionRef.current.releaseTime = now;
+              }
+            } else if (sessionRef.current.gripState === 2) { // COOLDOWN
+              if (now - sessionRef.current.releaseTime > 600) { // 600ms Cooldown
+                sessionRef.current.gripState = 0;
+              }
+            }
 
             newPoints.push({ 
               time: timeRef.current++, 
@@ -636,13 +667,18 @@ function App() {
         setCurrentVpp(vpp);
         telemetryRef.current.vpp = vpp;
 
-        // Calculate Frequency from Zero-Crossing Rate (ZCR) over the mean of window
+        // Calculate Frequency from Zero-Crossing Rate (ZCR) with Hysteresis over the mean of window
         const meanVal = bufferValues.reduce((a, b) => a + b, 0) / bufferValues.length;
         let zcCount = 0;
+        let isAbove = bufferValues[0] > meanVal;
+        const hysteresis = 50.0; // +/- 50 mV noise margin
+        
         for (let i = 1; i < bufferValues.length; i++) {
-          // Point crosses mean from below
-          if (bufferValues[i-1] < meanVal && bufferValues[i] >= meanVal) {
+          if (!isAbove && bufferValues[i] > meanVal + hysteresis) {
+            isAbove = true;
             zcCount++;
+          } else if (isAbove && bufferValues[i] < meanVal - hysteresis) {
+            isAbove = false;
           }
         }
         
