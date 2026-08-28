@@ -306,7 +306,7 @@ function App() {
   const [calibTimeLeft, setCalibTimeLeft] = useState(0);
 
   // Data & Signal State
-  const [emgData, setEmgData] = useState(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
+  const [emgData, setEmgData] = useState(Array.from({ length: 400 }, (_, i) => ({ time: i, rawMv: 0, plotValue: 0 })));
   const [currentVpp, setCurrentVpp] = useState(0);
   const [currentVmax, setCurrentVmax] = useState(0);
   const [currentVmin, setCurrentVmin] = useState(0);
@@ -345,7 +345,6 @@ function App() {
     envelopeBuffer: [],
     currentEnvelope: 0,
     releaseStartTime: 0,
-    smoothingBuffer: [],
   });
 
   useEffect(() => {
@@ -441,14 +440,14 @@ function App() {
     sessionRef.current.envelopeBuffer = [];
     sessionRef.current.currentEnvelope = 0;
     sessionRef.current.releaseStartTime = 0;
-    sessionRef.current.smoothingBuffer = [];
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
+    setEmgData(Array.from({ length: 400 }, (_, i) => ({ time: i, rawMv: 0, plotValue: 0 })));
   };
 
   const handleStopSession = () => {
     setIsSessionActive(false);
-    setEmgData(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
+    setEmgData(Array.from({ length: 400 }, (_, i) => ({ time: i, rawMv: 0, plotValue: 0 })));
     setCurrentVpp(0);
   };
 
@@ -612,33 +611,22 @@ function App() {
           }
 
           if (sessionRef.current.isActive) {
-            // 1. คำนวณ Rectified Signal ก่อนทำ Smoothing
-            const baseline = filterRef.current.dcOffset;
-            const absoluteDeviation = Math.abs(rawMv - baseline);
+            // 3. Raw Oscilloscope View (No smoothing)
+            const plotValue = rawMv - 1650; // Offset for centered display
 
-            // 2. สร้าง Signal Envelope สำหรับพล็อตลงกราฟ
-            sessionRef.current.smoothingBuffer.push(absoluteDeviation);
-            if (sessionRef.current.smoothingBuffer.length > 15) {
-              sessionRef.current.smoothingBuffer.shift();
-            }
-            const envelopeValue = sessionRef.current.smoothingBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.smoothingBuffer.length;
-            
-            const chartDataValue = baseline + envelopeValue;
-
-            // Pure State Machine - Dual Threshold Grip Counting
-            if (chartDataValue >= sessionRef.current.startMv && !sessionRef.current.isGripping) {
+            // Pure State Machine - Dual Threshold Grip Counting using RAW values
+            if (rawMv >= sessionRef.current.startMv && !sessionRef.current.isGripping) {
                sessionRef.current.isGripping = true;
                newGripCount++;
                sessionRef.current.gripCount = newGripCount;
-             } else if (chartDataValue <= sessionRef.current.stopMv && sessionRef.current.isGripping) {
+             } else if (rawMv <= sessionRef.current.stopMv && sessionRef.current.isGripping) {
                sessionRef.current.isGripping = false;
              }
 
             newPoints.push({ 
               time: timeRef.current++, 
-              raw: rawVal, 
               rawMv: rawMv, 
-              envelopeMv: chartDataValue 
+              plotValue: plotValue 
             });
           }
         }
@@ -681,7 +669,7 @@ function App() {
 
       if (sessionRef.current.isActive && newPoints.length > 0) {
         setEmgData(prevData => {
-          const combined = [...prevData, ...newPoints].slice(-150);
+          const combined = [...prevData, ...newPoints].slice(-400);
           return combined;
         });
 
@@ -899,14 +887,14 @@ function App() {
             <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
               <XAxis dataKey="time" hide />
-              <YAxis domain={[0, 3300]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis domain={[-1500, 1500]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
-              <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+              <ReferenceLine y={startGripMv - 1650} stroke="var(--accent-teal)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.startAt} ${startGripMv.toFixed(0)} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+              <ReferenceLine y={stopGripMv - 1650} stroke="var(--accent-orange)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.stopAt} ${stopGripMv.toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
-              <Line type="monotone" dataKey="envelopeMv" stroke="var(--accent-teal)" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+              <Line type="linear" dataKey="plotValue" stroke="var(--accent-teal)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
