@@ -587,9 +587,6 @@ function App() {
       let newGripCount = sessionRef.current.gripCount;
       let lastRaw = 0;
 
-      const nowTime = Date.now();
-      const cutoff = nowTime - 2000; // 2 seconds window
-
       for (let line of lines) {
         line = line.trim();
         if (line !== "" && !isNaN(line)) {
@@ -607,19 +604,22 @@ function App() {
             calibRef.current.rawBuffer.push(rawMv);
           }
 
-          // Always push to sliding window for telemetry (1-2 seconds)
-          sessionRef.current.rawBuffer.push({ timeMs: nowTime, value: rawMv, acMv: acMv });
-
-          // Envelope calculation
-          const positiveMv = Math.abs(acMv);
-          sessionRef.current.smoothingBuffer.push(positiveMv);
-          if (sessionRef.current.smoothingBuffer.length > 15) {
-            sessionRef.current.smoothingBuffer.shift();
+          // Always push to sliding window for telemetry (500 samples)
+          sessionRef.current.rawBuffer.push(rawMv);
+          if (sessionRef.current.rawBuffer.length > 500) {
+            sessionRef.current.rawBuffer.shift();
           }
-          const smoothedMv = sessionRef.current.smoothingBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.smoothingBuffer.length;
 
-          // Pure State Machine - Dual Threshold
           if (sessionRef.current.isActive) {
+            // Envelope calculation (Moving Average size 15)
+            const positiveMv = Math.abs(acMv);
+            sessionRef.current.smoothingBuffer.push(positiveMv);
+            if (sessionRef.current.smoothingBuffer.length > 15) {
+              sessionRef.current.smoothingBuffer.shift();
+            }
+            const smoothedMv = sessionRef.current.smoothingBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.smoothingBuffer.length;
+
+            // Pure State Machine - Dual Threshold Grip Counting
             if (smoothedMv >= sessionRef.current.startMv && !sessionRef.current.isGripping) {
                sessionRef.current.isGripping = true;
                newGripCount++;
@@ -627,30 +627,27 @@ function App() {
              } else if (smoothedMv <= sessionRef.current.stopMv && sessionRef.current.isGripping) {
                sessionRef.current.isGripping = false;
              }
-          }
 
-          // Compute software gain based on recent telemetry Vpp
-          let gain = 1;
-          if (telemetryRef.current.vpp > 0 && telemetryRef.current.vpp < 1000) {
-            gain = 1000 / telemetryRef.current.vpp;
-            if (gain > 5) gain = 5; // limit max gain
-          }
+            // Compute software gain based on recent telemetry Vpp
+            let gain = 1;
+            if (telemetryRef.current.vpp > 0 && telemetryRef.current.vpp < 1000) {
+              gain = 1000 / telemetryRef.current.vpp;
+              if (gain > 5) gain = 5; // limit max gain
+            }
 
-          newPoints.push({ 
-            time: timeRef.current++, 
-            raw: rawVal, 
-            rawMv: rawMv, 
-            envelopeMv: smoothedMv * gain 
-          });
+            newPoints.push({ 
+              time: timeRef.current++, 
+              raw: rawVal, 
+              rawMv: rawMv, 
+              envelopeMv: smoothedMv * gain 
+            });
+          }
         }
       }
-
-      // Remove data older than 2 seconds from sliding window
-      sessionRef.current.rawBuffer = sessionRef.current.rawBuffer.filter(p => p.timeMs >= cutoff);
       
-      // Calculate Vmax, Vmin, Vp-p, Freq from 2-second time window dynamically
+      // Calculate Vmax, Vmin, Vp-p, Freq from 500-sample window
       if (sessionRef.current.rawBuffer.length > 0) {
-        const bufferValues = sessionRef.current.rawBuffer.map(p => p.value);
+        const bufferValues = sessionRef.current.rawBuffer;
         const winMax = Math.max(...bufferValues);
         const winMin = Math.min(...bufferValues);
         const vpp = winMax - winMin;
@@ -660,37 +657,36 @@ function App() {
         setCurrentVpp(vpp);
         telemetryRef.current.vpp = vpp;
 
-        // Calculate Frequency from zero crossings of acMv in the window
+        // Calculate Frequency from Zero-Crossing Rate (ZCR) over the mean of window
+        const meanVal = bufferValues.reduce((a, b) => a + b, 0) / bufferValues.length;
         let zcCount = 0;
-        for (let i = 1; i < sessionRef.current.rawBuffer.length; i++) {
-          if (sessionRef.current.rawBuffer[i-1].acMv < 0 && sessionRef.current.rawBuffer[i].acMv >= 0) {
+        for (let i = 1; i < bufferValues.length; i++) {
+          // Point crosses mean from below
+          if (bufferValues[i-1] < meanVal && bufferValues[i] >= meanVal) {
             zcCount++;
           }
         }
         
-        // Window duration in seconds
-        const firstTime = sessionRef.current.rawBuffer[0].timeMs;
-        const lastTime = sessionRef.current.rawBuffer[sessionRef.current.rawBuffer.length - 1].timeMs;
-        const windowDurationSecs = (lastTime - firstTime) / 1000;
+        // At 500 samples = 1 sec window exactly, ZCR directly equals Hz
+        // To be safe, factor in actual buffer size in case it hasn't reached 500 yet
+        let windowSecs = bufferValues.length / 500.0;
+        let newFreq = zcCount / windowSecs;
         
-        if (windowDurationSecs > 0) {
-          let newFreq = zcCount / windowDurationSecs;
-          // Clamp frequency to prevent extreme values
-          if (newFreq < 0.5 && newFreq > 0) newFreq = 0.5;
-          if (newFreq > 200) newFreq = 200.0;
-          setCurrentFreq(newFreq);
-        }
+        // Clamp frequency
+        if (newFreq < 0.5 && newFreq > 0) newFreq = 0.5;
+        if (newFreq > 200) newFreq = 200.0;
+        setCurrentFreq(newFreq);
       }
 
-      if (newPoints.length > 0) {
-        setRawAdc(lastRaw);
-        
+      if (lastRaw > 0) setRawAdc(lastRaw);
+
+      if (sessionRef.current.isActive && newPoints.length > 0) {
         setEmgData(prevData => {
           const combined = [...prevData, ...newPoints].slice(-150);
           return combined;
         });
 
-        if (sessionRef.current.isActive && newGripCount !== gripCount) {
+        if (newGripCount !== gripCount) {
            setGripCount(newGripCount);
         }
       }
