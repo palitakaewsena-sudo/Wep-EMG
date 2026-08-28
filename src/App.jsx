@@ -301,6 +301,10 @@ function App() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [gripCount, setGripCount] = useState(0);
   
+  // Calibration State
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [calibTimeLeft, setCalibTimeLeft] = useState(0);
+
   // Data & Signal State
   const [emgData, setEmgData] = useState(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
   const [currentVpp, setCurrentVpp] = useState(0);
@@ -323,6 +327,12 @@ function App() {
   const timeRef = useRef(0);
   const filterRef = useRef({ dcOffset: 1650, freq: 5.0 });
   const timestampRef = useRef({ lastTime: 0, sampleCount: 0, measuredInterval: 0.002 });
+  const telemetryRef = useRef({ vpp: 0 }); // Store latest Vpp for software gain
+  
+  const calibRef = useRef({
+    isActive: false,
+    rawBuffer: [],
+  });
 
   const sessionRef = useRef({ 
     isActive: false, 
@@ -372,6 +382,47 @@ function App() {
     }
     return () => clearInterval(interval);
   }, [isSessionActive, timeLeft]);
+
+  // Calibration Timer
+  useEffect(() => {
+    let interval;
+    if (isCalibrating && calibTimeLeft > 0) {
+      interval = setInterval(() => {
+        setCalibTimeLeft(prev => prev - 1);
+      }, 1000);
+    } else if (isCalibrating && calibTimeLeft === 0) {
+      finishCalibration();
+    }
+    return () => clearInterval(interval);
+  }, [isCalibrating, calibTimeLeft]);
+
+  const handleStartCalibration = () => {
+    if (!isConnected) {
+      alert(lang === 'th' ? 'กรุณาเชื่อมต่ออุปกรณ์ก่อน' : 'Please connect a device first');
+      return;
+    }
+    setIsCalibrating(true);
+    setCalibTimeLeft(4); // 4 seconds calibration
+    calibRef.current = { isActive: true, rawBuffer: [] };
+  };
+
+  const finishCalibration = () => {
+    setIsCalibrating(false);
+    calibRef.current.isActive = false;
+    
+    if (calibRef.current.rawBuffer.length > 0) {
+      const vals = calibRef.current.rawBuffer;
+      const vMin = Math.min(...vals);
+      const vMax = Math.max(...vals);
+      const vPp = vMax - vMin;
+      
+      const newStart = vMin + (0.35 * vPp);
+      const newStop = vMin + (0.15 * vPp);
+      
+      setStartGripMv(newStart);
+      setStopGripMv(newStop);
+    }
+  };
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -535,25 +586,12 @@ function App() {
       let newPoints = [];
       let newGripCount = sessionRef.current.gripCount;
       let lastRaw = 0;
-      let maxV = -Infinity, minV = Infinity;
 
-      // Measure real sampling rate
-      const now = performance.now();
-      const numSamples = lines.filter(l => l.trim() !== "" && !isNaN(l.trim())).length;
-      if (numSamples > 0 && timestampRef.current.lastTime > 0) {
-        const dtMs = now - timestampRef.current.lastTime;
-        if (dtMs > 0) {
-          const intervalSec = (dtMs / 1000) / numSamples;
-          // Smooth the measured interval (EMA)
-          timestampRef.current.measuredInterval = 
-            timestampRef.current.measuredInterval * 0.7 + intervalSec * 0.3;
-        }
-      }
-      timestampRef.current.lastTime = now;
+      const nowTime = Date.now();
+      const cutoff = nowTime - 2000; // 2 seconds window
 
       for (let line of lines) {
         line = line.trim();
-        console.log("BLE Received:", line); // DEBUG
         if (line !== "" && !isNaN(line)) {
           const rawVal = parseFloat(line); // Assuming ADC 12-bit
           lastRaw = rawVal;
@@ -562,30 +600,26 @@ function App() {
           const rawMv = (0.000000156 * Math.pow(rawVal, 3)) - (0.00048 * Math.pow(rawVal, 2)) + (1.05 * rawVal) + 150; 
           
           // Dynamic DC offset tracking (High-pass filter for baseline wander)
-          // Adjusts slowly to the real center voltage (starts at 1650)
           filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
-          
-          // Signal centered at 0 
           const acMv = rawMv - filterRef.current.dcOffset; 
           
-          // No software calibration. Display exact hardware measurements (matching Oscilloscope).
-          const calibratedMv = acMv;
+          if (calibRef.current.isActive) {
+            calibRef.current.rawBuffer.push(rawMv);
+          }
 
+          // Always push to sliding window for telemetry (1-2 seconds)
+          sessionRef.current.rawBuffer.push({ timeMs: nowTime, value: rawMv, acMv: acMv });
+
+          // Envelope calculation
+          const positiveMv = Math.abs(acMv);
+          sessionRef.current.smoothingBuffer.push(positiveMv);
+          if (sessionRef.current.smoothingBuffer.length > 15) {
+            sessionRef.current.smoothingBuffer.shift();
+          }
+          const smoothedMv = sessionRef.current.smoothingBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.smoothingBuffer.length;
+
+          // Pure State Machine - Dual Threshold
           if (sessionRef.current.isActive) {
-            // Moving Average Envelope
-            const positiveMv = Math.abs(acMv);
-            sessionRef.current.smoothingBuffer.push(positiveMv);
-            if (sessionRef.current.smoothingBuffer.length > 15) {
-              sessionRef.current.smoothingBuffer.shift();
-            }
-            const smoothedMv = sessionRef.current.smoothingBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.smoothingBuffer.length;
-
-            newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv, envelopeMv: smoothedMv });
-
-            const nowTime = Date.now();
-            sessionRef.current.rawBuffer.push({ timeMs: nowTime, value: rawMv });
-
-            // Pure State Machine - Dual Threshold
             if (smoothedMv >= sessionRef.current.startMv && !sessionRef.current.isGripping) {
                sessionRef.current.isGripping = true;
                newGripCount++;
@@ -594,77 +628,71 @@ function App() {
                sessionRef.current.isGripping = false;
              }
           }
+
+          // Compute software gain based on recent telemetry Vpp
+          let gain = 1;
+          if (telemetryRef.current.vpp > 0 && telemetryRef.current.vpp < 1000) {
+            gain = 1000 / telemetryRef.current.vpp;
+            if (gain > 5) gain = 5; // limit max gain
+          }
+
+          newPoints.push({ 
+            time: timeRef.current++, 
+            raw: rawVal, 
+            rawMv: rawMv, 
+            envelopeMv: smoothedMv * gain 
+          });
         }
       }
 
-      if (sessionRef.current.isActive) {
-        const purgeTime = Date.now();
-        const cutoff = purgeTime - 2000; // 2 seconds window
+      // Remove data older than 2 seconds from sliding window
+      sessionRef.current.rawBuffer = sessionRef.current.rawBuffer.filter(p => p.timeMs >= cutoff);
+      
+      // Calculate Vmax, Vmin, Vp-p, Freq from 2-second time window dynamically
+      if (sessionRef.current.rawBuffer.length > 0) {
+        const bufferValues = sessionRef.current.rawBuffer.map(p => p.value);
+        const winMax = Math.max(...bufferValues);
+        const winMin = Math.min(...bufferValues);
+        const vpp = winMax - winMin;
         
-        // Remove data older than 2 seconds
-        sessionRef.current.rawBuffer = sessionRef.current.rawBuffer.filter(p => p.timeMs >= cutoff);
+        setCurrentVmax(winMax);
+        setCurrentVmin(winMin);
+        setCurrentVpp(vpp);
+        telemetryRef.current.vpp = vpp;
+
+        // Calculate Frequency from zero crossings of acMv in the window
+        let zcCount = 0;
+        for (let i = 1; i < sessionRef.current.rawBuffer.length; i++) {
+          if (sessionRef.current.rawBuffer[i-1].acMv < 0 && sessionRef.current.rawBuffer[i].acMv >= 0) {
+            zcCount++;
+          }
+        }
         
-        // Calculate Vmax, Vmin from 2-second time window dynamically
-        if (sessionRef.current.rawBuffer.length > 0) {
-          const bufferValues = sessionRef.current.rawBuffer.map(p => p.value);
-          const winMax = Math.max(...bufferValues);
-          const winMin = Math.min(...bufferValues);
-          
-          setCurrentVmax(winMax);
-          setCurrentVmin(winMin);
-          setCurrentVpp(winMax - winMin);
+        // Window duration in seconds
+        const firstTime = sessionRef.current.rawBuffer[0].timeMs;
+        const lastTime = sessionRef.current.rawBuffer[sessionRef.current.rawBuffer.length - 1].timeMs;
+        const windowDurationSecs = (lastTime - firstTime) / 1000;
+        
+        if (windowDurationSecs > 0) {
+          let newFreq = zcCount / windowDurationSecs;
+          // Clamp frequency to prevent extreme values
+          if (newFreq < 0.5 && newFreq > 0) newFreq = 0.5;
+          if (newFreq > 200) newFreq = 200.0;
+          setCurrentFreq(newFreq);
         }
       }
 
       if (newPoints.length > 0) {
         setRawAdc(lastRaw);
         
-        if (sessionRef.current.isActive) {
-          setEmgData(prevData => {
+        setEmgData(prevData => {
           const combined = [...prevData, ...newPoints].slice(-150);
-          
-          if (combined.length > 20) {
-            let zcIndices = [];
-            
-            for (let i = 1; i < combined.length; i++) {
-              // Record indices of positive-going zero crossings (must use zero-centered data)
-              if (combined[i-1].zeroCenteredValue < 0 && combined[i].zeroCenteredValue >= 0) {
-                zcIndices.push(combined[i].time);
-              }
-            }
-            
-            // Calculate frequency using dynamically measured sampling interval
-            const SAMPLING_INTERVAL = timestampRef.current.measuredInterval;
-            let newFreq = filterRef.current.freq;
-            if (zcIndices.length >= 2) {
-              let totalPeriod = 0;
-              for (let i = 1; i < zcIndices.length; i++) {
-                totalPeriod += (zcIndices[i] - zcIndices[i-1]);
-              }
-              const periodInSamples = totalPeriod / (zcIndices.length - 1);
-              const periodInSeconds = periodInSamples * SAMPLING_INTERVAL;
-              newFreq = 1 / periodInSeconds;
-            } else if (zcIndices.length === 0 && combined.length > 100) {
-              newFreq = 0;
-            }
-            
-            // Clamp frequency to prevent extreme values
-            if (newFreq < 0.5 && newFreq > 0) newFreq = 0.5;
-            if (newFreq > 200) newFreq = 200.0;
-            
-            // Update filterRef freq only if > 0 so that calibration doesn't blow up
-            if (newFreq > 0) {
-              filterRef.current.freq = newFreq;
-            }
-            setCurrentFreq(newFreq);
-          }
-          
           return combined;
         });
-        setDcOffsetState(filterRef.current.dcOffset);
-        }
 
-        if (sessionRef.current.isActive && newGripCount !== gripCount) setGripCount(newGripCount);
+        if (sessionRef.current.isActive && newGripCount !== gripCount) {
+           setGripCount(newGripCount);
+        }
       }
     };
 
@@ -924,8 +952,13 @@ function App() {
         <div style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>{t.calibTitle}</div>
         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>{t.calibSub}</div>
         
-        <button className="btn btn-purple" style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-          <Target size={16} /> {t.calibBtn}
+        <button 
+          className="btn btn-purple" 
+          onClick={handleStartCalibration} 
+          disabled={isCalibrating || !isConnected}
+          style={{ width: '100%', display: 'flex', justifyContent: 'center', opacity: (!isConnected || isCalibrating) ? 0.6 : 1 }}
+        >
+          <Target size={16} /> {isCalibrating ? `Calibrating... (${calibTimeLeft}s)` : t.calibBtn}
         </button>
 
         <div className="action-grid">
