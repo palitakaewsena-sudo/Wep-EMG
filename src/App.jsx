@@ -575,7 +575,7 @@ function App() {
             // Moving Average Envelope
             const positiveMv = Math.abs(acMv);
             sessionRef.current.smoothingBuffer.push(positiveMv);
-            if (sessionRef.current.smoothingBuffer.length > 50) {
+            if (sessionRef.current.smoothingBuffer.length > 30) {
               sessionRef.current.smoothingBuffer.shift();
             }
             const smoothedMv = sessionRef.current.smoothingBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.smoothingBuffer.length;
