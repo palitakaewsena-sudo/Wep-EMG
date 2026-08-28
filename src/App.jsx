@@ -323,6 +323,7 @@ function App() {
   const [releaseMult, setReleaseMult] = useState(1.10);
 
   // Refs for real-time processing
+  const debugTextRef = useRef(null);
   const bufferRef = useRef("");
   const timeRef = useRef(0);
   const filterRef = useRef({ dcOffset: 1650, freq: 5.0 });
@@ -597,8 +598,9 @@ function App() {
           const rawVal = parseFloat(line); // Assuming ADC 12-bit
           lastRaw = rawVal;
           
-          // 1. แปลงค่าแรงดันดิบตรงๆ (Direct Raw ADC to Voltage) + Scale ชดเชย (1.11)
-          const rawMv = (rawVal / 4095.0) * 3300.0 * 1.11;
+          // 1. แปลงค่าแรงดันดิบตรงๆ (Direct Raw ADC to Voltage)
+          let rawMv = (rawVal / 4095.0) * 3300.0;
+          if (rawMv > 3300.0) rawMv = 3300.0; // Clamp to max 3300mV
 
           // 2. High-pass filter (DC Offset tracking)
           filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
@@ -618,6 +620,15 @@ function App() {
           }
           const envelopeMa = sessionRef.current.envelopeBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.envelopeBuffer.length;
           const envelopeBaseline = envelopeMa + filterRef.current.dcOffset;
+          
+          // Debug UI update
+          if (debugTextRef.current) {
+            let stateName = "IDLE";
+            if (sessionRef.current.gripState === 1) stateName = "GRIPPING";
+            else if (sessionRef.current.gripState === 2) stateName = "COOLDOWN";
+            
+            debugTextRef.current.innerText = `State: ${stateName} | Env: ${envelopeBaseline.toFixed(0)}mV | Thr: ${sessionRef.current.startMv.toFixed(0)}mV`;
+          }
           
           if (calibRef.current.isActive) {
             calibRef.current.rawBuffer.push(envelopeBaseline); // Calibrate using envelope instead of raw
@@ -976,6 +987,10 @@ function App() {
         >
           <Target size={16} /> {isCalibrating ? `Calibrating... (${calibTimeLeft}s)` : t.calibBtn}
         </button>
+
+        <div ref={debugTextRef} style={{ marginTop: '1rem', padding: '0.5rem', background: '#1E293B', color: '#38BDF8', fontSize: '0.75rem', fontFamily: 'monospace', borderRadius: '4px', textAlign: 'center' }}>
+          State: IDLE | Env: 0mV | Thr: 0mV
+        </div>
 
         <div className="action-grid" style={{ marginTop: '1rem' }}>
           <button className="action-btn" onClick={handleStartSession} style={{ color: isSessionActive ? 'var(--text-muted)' : 'var(--accent-teal)', borderColor: isSessionActive ? 'var(--border-color)' : 'var(--accent-teal)', background: isSessionActive ? 'var(--bg-main)' : 'rgba(0,188,163,0.05)' }}>
