@@ -323,6 +323,7 @@ function App() {
   const [releaseMult, setReleaseMult] = useState(1.10);
 
   // Refs for real-time processing
+  const debugTextRef = useRef(null);
   const bufferRef = useRef("");
   const timeRef = useRef(0);
   const filterRef = useRef({ dcOffset: 1650, freq: 5.0 });
@@ -413,13 +414,13 @@ function App() {
     
     if (calibRef.current.rawBuffer.length > 0) {
       const vals = calibRef.current.rawBuffer;
-      const vMin = Math.min(...vals);
-      const vMax = Math.max(...vals);
-      const vPp = vMax - vMin;
+      // Filter out extreme spikes by sorting and getting the median
+      vals.sort((a, b) => a - b);
+      const baseline = vals[Math.floor(vals.length / 2)];
       
-      const baseline = vMin;
-      const newStart = baseline + (0.40 * vPp);
-      const newStop = baseline + (0.15 * vPp);
+      // Calculate UPPER_THRESHOLD to be 350mV above baseline, and LOWER_THRESHOLD 150mV above baseline
+      const newStart = baseline + 350;
+      const newStop = baseline + 150;
       
       setStartGripMv(newStart);
       setStopGripMv(newStop);
@@ -611,10 +612,22 @@ function App() {
           }
           const filteredMv = sessionRef.current.maBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.maBuffer.length;
 
-          // 4. Signal Envelope (EMA)
-          const alpha = 0.1; // Smoothing factor
-          sessionRef.current.emaValue = (alpha * Math.abs(filteredMv)) + ((1 - alpha) * sessionRef.current.emaValue);
-          const envelopeBaseline = sessionRef.current.emaValue + filterRef.current.dcOffset;
+          // 4. Signal Envelope (Moving Average on Absolute AC for smoother peak detection)
+          sessionRef.current.envelopeBuffer.push(Math.abs(filteredMv));
+          if (sessionRef.current.envelopeBuffer.length > 50) { // 50 samples = 100ms smoothing
+            sessionRef.current.envelopeBuffer.shift();
+          }
+          const envelopeMa = sessionRef.current.envelopeBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.envelopeBuffer.length;
+          const envelopeBaseline = envelopeMa + filterRef.current.dcOffset;
+          
+          // Debug UI update
+          if (debugTextRef.current) {
+            let stateName = "IDLE";
+            if (sessionRef.current.gripState === 1) stateName = "GRIPPING";
+            else if (sessionRef.current.gripState === 2) stateName = "COOLDOWN";
+            
+            debugTextRef.current.innerText = `State: ${stateName} | Env: ${envelopeBaseline.toFixed(0)}mV | Thr: ${sessionRef.current.startMv.toFixed(0)}mV`;
+          }
           
           if (calibRef.current.isActive) {
             calibRef.current.rawBuffer.push(envelopeBaseline); // Calibrate using envelope instead of raw
@@ -974,7 +987,11 @@ function App() {
           <Target size={16} /> {isCalibrating ? `Calibrating... (${calibTimeLeft}s)` : t.calibBtn}
         </button>
 
-        <div className="action-grid">
+        <div ref={debugTextRef} style={{ marginTop: '1rem', padding: '0.5rem', background: '#1E293B', color: '#38BDF8', fontSize: '0.75rem', fontFamily: 'monospace', borderRadius: '4px', textAlign: 'center' }}>
+          State: IDLE | Env: 0mV | Thr: 0mV
+        </div>
+
+        <div className="action-grid" style={{ marginTop: '1rem' }}>
           <button className="action-btn" onClick={handleStartSession} style={{ color: isSessionActive ? 'var(--text-muted)' : 'var(--accent-teal)', borderColor: isSessionActive ? 'var(--border-color)' : 'var(--accent-teal)', background: isSessionActive ? 'var(--bg-main)' : 'rgba(0,188,163,0.05)' }}>
             <Play size={20} />
             {t.startBtn}
