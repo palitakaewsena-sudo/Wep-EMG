@@ -323,6 +323,7 @@ function App() {
   const [releaseMult, setReleaseMult] = useState(1.10);
 
   // Refs for real-time processing
+  const debugTextRef = useRef(null);
   const bufferRef = useRef("");
   const timeRef = useRef(0);
   const filterRef = useRef({ dcOffset: 1650, freq: 5.0 });
@@ -624,8 +625,14 @@ function App() {
           const envelopePeak = envelopeMa * 1.57;
           const current_voltage_mV = envelopePeak + filterRef.current.dcOffset;
           
-          // Debug log (instead of UI)
-          const prevState = sessionRef.current.gripState;
+          // Debug UI update
+          if (debugTextRef.current) {
+            let stateName = "IDLE";
+            if (sessionRef.current.gripState === 1) stateName = "GRIPPING";
+            else if (sessionRef.current.gripState === 2) stateName = "COOLDOWN";
+            
+            debugTextRef.current.innerText = `State: ${stateName} | Env: ${current_voltage_mV.toFixed(0)}mV | Thr: ${sessionRef.current.startMv.toFixed(0)}mV`;
+          }
           
           if (calibRef.current.isActive) {
             calibRef.current.rawBuffer.push(current_voltage_mV); // Calibrate using matching envelope voltage
@@ -644,26 +651,18 @@ function App() {
             if (sessionRef.current.gripState === 0) { // IDLE
               if (current_voltage_mV >= sessionRef.current.startMv) {
                 sessionRef.current.gripState = 1;
+                newGripCount++;
+                sessionRef.current.gripCount = newGripCount;
               }
             } else if (sessionRef.current.gripState === 1) { // GRIPPING
               if (current_voltage_mV <= sessionRef.current.stopMv) {
                 sessionRef.current.gripState = 2;
                 sessionRef.current.releaseTime = now;
-                // Count ONLY when the user fully releases the grip (ACTIVE -> COOLDOWN/IDLE)
-                newGripCount++;
-                sessionRef.current.gripCount = newGripCount;
               }
             } else if (sessionRef.current.gripState === 2) { // COOLDOWN
-              if (now - sessionRef.current.releaseTime > 200) { // Reduced debounce to 200ms
+              if (now - sessionRef.current.releaseTime > 600) { // 600ms Cooldown
                 sessionRef.current.gripState = 0;
               }
-            }
-
-            if (sessionRef.current.gripState !== prevState) {
-              let stateName = "IDLE";
-              if (sessionRef.current.gripState === 1) stateName = "GRIPPING";
-              else if (sessionRef.current.gripState === 2) stateName = "COOLDOWN";
-              console.log(`[State] -> ${stateName} | Env: ${current_voltage_mV.toFixed(0)}mV | Thr: ${sessionRef.current.startMv.toFixed(0)}mV | Count: ${newGripCount}`);
             }
 
             newPoints.push({ 
@@ -992,6 +991,10 @@ function App() {
         >
           <Target size={16} /> {isCalibrating ? `Calibrating... (${calibTimeLeft}s)` : t.calibBtn}
         </button>
+
+        <div ref={debugTextRef} style={{ marginTop: '1rem', padding: '0.5rem', background: '#1E293B', color: '#38BDF8', fontSize: '0.75rem', fontFamily: 'monospace', borderRadius: '4px', textAlign: 'center' }}>
+          State: IDLE | Env: 0mV | Thr: 0mV
+        </div>
 
         <div className="action-grid" style={{ marginTop: '1rem' }}>
           <button className="action-btn" onClick={handleStartSession} style={{ color: isSessionActive ? 'var(--text-muted)' : 'var(--accent-teal)', borderColor: isSessionActive ? 'var(--border-color)' : 'var(--accent-teal)', background: isSessionActive ? 'var(--bg-main)' : 'rgba(0,188,163,0.05)' }}>
