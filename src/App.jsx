@@ -333,6 +333,8 @@ function App() {
     lastGripTime: 0,
     rawBuffer: [],
     envelopeBuffer: [],
+    currentEnvelope: 0,
+    releaseStartTime: 0,
   });
 
   useEffect(() => {
@@ -384,6 +386,8 @@ function App() {
     sessionRef.current.lastGripTime = 0;
     sessionRef.current.rawBuffer = [];
     sessionRef.current.envelopeBuffer = [];
+    sessionRef.current.currentEnvelope = 0;
+    sessionRef.current.releaseStartTime = 0;
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
   };
@@ -566,28 +570,43 @@ function App() {
           const calibratedMv = acMv;
 
           if (sessionRef.current.isActive) {
-            // Signal Envelope processing
-            const positiveMv = Math.abs(acMv); // acMv is already (rawMv - dcOffset)
-            sessionRef.current.envelopeBuffer.push(positiveMv);
-            if (sessionRef.current.envelopeBuffer.length > 20) {
-              sessionRef.current.envelopeBuffer.shift();
+            // Peak Detector with Exponential Decay
+            const positiveMv = Math.abs(acMv);
+            
+            if (positiveMv > sessionRef.current.currentEnvelope) {
+              sessionRef.current.currentEnvelope = positiveMv; // Attack immediately
+            } else {
+              sessionRef.current.currentEnvelope = sessionRef.current.currentEnvelope * 0.98; // Decay slowly
             }
             
-            // Calculate Moving Average
-            const envelopeMv = sessionRef.current.envelopeBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.envelopeBuffer.length;
+            const envelopeMv = sessionRef.current.currentEnvelope;
 
             newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv, envelopeMv: envelopeMv });
 
             const nowTime = Date.now();
             sessionRef.current.rawBuffer.push({ timeMs: nowTime, value: rawMv });
 
-            // Dual Threshold (Hysteresis Logic) without time delay
+            // Dual Threshold (Hysteresis) + Minimum Release Time (Debounce)
+            const RELEASE_HOLD_MS = 250; // Require signal to be below threshold for 250ms to release
+
             if (!sessionRef.current.isGripping && envelopeMv >= sessionRef.current.startMv) {
                sessionRef.current.isGripping = true;
                newGripCount++;
                sessionRef.current.gripCount = newGripCount;
-             } else if (sessionRef.current.isGripping && envelopeMv <= sessionRef.current.stopMv) {
-               sessionRef.current.isGripping = false;
+               sessionRef.current.releaseStartTime = 0; // Clear any pending release
+             } else if (sessionRef.current.isGripping) {
+               if (envelopeMv < sessionRef.current.stopMv) {
+                 if (sessionRef.current.releaseStartTime === 0) {
+                   sessionRef.current.releaseStartTime = nowTime; // Start release timer
+                 } else if (nowTime - sessionRef.current.releaseStartTime > RELEASE_HOLD_MS) {
+                   // Held below threshold long enough
+                   sessionRef.current.isGripping = false;
+                   sessionRef.current.releaseStartTime = 0;
+                 }
+               } else {
+                 // Signal spiked back up, cancel release timer
+                 sessionRef.current.releaseStartTime = 0;
+               }
              }
           }
         }
