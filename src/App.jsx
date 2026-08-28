@@ -335,6 +335,7 @@ function App() {
     envelopeBuffer: [],
     currentEnvelope: 0,
     releaseStartTime: 0,
+    smoothingBuffer: [],
   });
 
   useEffect(() => {
@@ -388,6 +389,7 @@ function App() {
     sessionRef.current.envelopeBuffer = [];
     sessionRef.current.currentEnvelope = 0;
     sessionRef.current.releaseStartTime = 0;
+    sessionRef.current.smoothingBuffer = [];
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
   };
@@ -570,43 +572,26 @@ function App() {
           const calibratedMv = acMv;
 
           if (sessionRef.current.isActive) {
-            // Peak Detector with Exponential Decay
+            // Moving Average Envelope
             const positiveMv = Math.abs(acMv);
-            
-            if (positiveMv > sessionRef.current.currentEnvelope) {
-              sessionRef.current.currentEnvelope = positiveMv; // Attack immediately
-            } else {
-              sessionRef.current.currentEnvelope = sessionRef.current.currentEnvelope * 0.98; // Decay slowly
+            sessionRef.current.smoothingBuffer.push(positiveMv);
+            if (sessionRef.current.smoothingBuffer.length > 50) {
+              sessionRef.current.smoothingBuffer.shift();
             }
-            
-            const envelopeMv = sessionRef.current.currentEnvelope;
+            const smoothedMv = sessionRef.current.smoothingBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.smoothingBuffer.length;
 
-            newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv, envelopeMv: envelopeMv });
+            newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv, envelopeMv: smoothedMv });
 
             const nowTime = Date.now();
             sessionRef.current.rawBuffer.push({ timeMs: nowTime, value: rawMv });
 
-            // Dual Threshold (Hysteresis) + Minimum Release Time (Debounce)
-            const RELEASE_HOLD_MS = 250; // Require signal to be below threshold for 250ms to release
-
-            if (!sessionRef.current.isGripping && envelopeMv >= sessionRef.current.startMv) {
+            // Pure State Machine - Dual Threshold
+            if (smoothedMv >= sessionRef.current.startMv && !sessionRef.current.isGripping) {
                sessionRef.current.isGripping = true;
                newGripCount++;
                sessionRef.current.gripCount = newGripCount;
-               sessionRef.current.releaseStartTime = 0; // Clear any pending release
-             } else if (sessionRef.current.isGripping) {
-               if (envelopeMv < sessionRef.current.stopMv) {
-                 if (sessionRef.current.releaseStartTime === 0) {
-                   sessionRef.current.releaseStartTime = nowTime; // Start release timer
-                 } else if (nowTime - sessionRef.current.releaseStartTime > RELEASE_HOLD_MS) {
-                   // Held below threshold long enough
-                   sessionRef.current.isGripping = false;
-                   sessionRef.current.releaseStartTime = 0;
-                 }
-               } else {
-                 // Signal spiked back up, cancel release timer
-                 sessionRef.current.releaseStartTime = 0;
-               }
+             } else if (smoothedMv <= sessionRef.current.stopMv && sessionRef.current.isGripping) {
+               sessionRef.current.isGripping = false;
              }
           }
         }
