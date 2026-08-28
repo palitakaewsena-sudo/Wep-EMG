@@ -898,7 +898,7 @@ function App() {
               <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.stopAt} ${stopGripMv.toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
-              <Line type="monotone" dataKey="value" stroke="var(--text-primary)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="envelopeMv" stroke="var(--accent-teal)" strokeWidth={2.5} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
