@@ -416,8 +416,9 @@ function App() {
       const vMax = Math.max(...vals);
       const vPp = vMax - vMin;
       
-      const newStart = vMin + (0.35 * vPp);
-      const newStop = vMin + (0.15 * vPp);
+      const baseline = vMin;
+      const newStart = baseline + (0.40 * vPp);
+      const newStop = baseline + (0.15 * vPp);
       
       setStartGripMv(newStart);
       setStopGripMv(newStop);
@@ -611,35 +612,33 @@ function App() {
           }
 
           if (sessionRef.current.isActive) {
-            // Envelope calculation (Moving Average size 15)
-            const positiveMv = Math.abs(acMv);
-            sessionRef.current.smoothingBuffer.push(positiveMv);
+            // 1. คำนวณ Rectified Signal ก่อนทำ Smoothing
+            const baseline = filterRef.current.dcOffset;
+            const absoluteDeviation = Math.abs(rawMv - baseline);
+
+            // 2. สร้าง Signal Envelope สำหรับพล็อตลงกราฟ
+            sessionRef.current.smoothingBuffer.push(absoluteDeviation);
             if (sessionRef.current.smoothingBuffer.length > 15) {
               sessionRef.current.smoothingBuffer.shift();
             }
-            const smoothedMv = sessionRef.current.smoothingBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.smoothingBuffer.length;
+            const envelopeValue = sessionRef.current.smoothingBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.smoothingBuffer.length;
+            
+            const chartDataValue = baseline + envelopeValue;
 
             // Pure State Machine - Dual Threshold Grip Counting
-            if (smoothedMv >= sessionRef.current.startMv && !sessionRef.current.isGripping) {
+            if (chartDataValue >= sessionRef.current.startMv && !sessionRef.current.isGripping) {
                sessionRef.current.isGripping = true;
                newGripCount++;
                sessionRef.current.gripCount = newGripCount;
-             } else if (smoothedMv <= sessionRef.current.stopMv && sessionRef.current.isGripping) {
+             } else if (chartDataValue <= sessionRef.current.stopMv && sessionRef.current.isGripping) {
                sessionRef.current.isGripping = false;
              }
-
-            // Compute software gain based on recent telemetry Vpp
-            let gain = 1;
-            if (telemetryRef.current.vpp > 0 && telemetryRef.current.vpp < 1000) {
-              gain = 1000 / telemetryRef.current.vpp;
-              if (gain > 5) gain = 5; // limit max gain
-            }
 
             newPoints.push({ 
               time: timeRef.current++, 
               raw: rawVal, 
               rawMv: rawMv, 
-              envelopeMv: smoothedMv * gain 
+              envelopeMv: chartDataValue 
             });
           }
         }
