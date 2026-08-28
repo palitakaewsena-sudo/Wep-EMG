@@ -306,7 +306,7 @@ function App() {
   const [calibTimeLeft, setCalibTimeLeft] = useState(0);
 
   // Data & Signal State
-  const [emgData, setEmgData] = useState(Array.from({ length: 400 }, (_, i) => ({ time: i, rawMv: 0, plotValue: 0 })));
+  const [emgData, setEmgData] = useState(Array.from({ length: 300 }, (_, i) => ({ time: i, rawMv: 0 })));
   const [currentVpp, setCurrentVpp] = useState(0);
   const [currentVmax, setCurrentVmax] = useState(0);
   const [currentVmin, setCurrentVmin] = useState(0);
@@ -442,12 +442,12 @@ function App() {
     sessionRef.current.releaseStartTime = 0;
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
-    setEmgData(Array.from({ length: 400 }, (_, i) => ({ time: i, rawMv: 0, plotValue: 0 })));
+    setEmgData(Array.from({ length: 300 }, (_, i) => ({ time: i, rawMv: 0 })));
   };
 
   const handleStopSession = () => {
     setIsSessionActive(false);
-    setEmgData(Array.from({ length: 400 }, (_, i) => ({ time: i, rawMv: 0, plotValue: 0 })));
+    setEmgData(Array.from({ length: 300 }, (_, i) => ({ time: i, rawMv: 0 })));
     setCurrentVpp(0);
   };
 
@@ -593,12 +593,8 @@ function App() {
           const rawVal = parseFloat(line); // Assuming ADC 12-bit
           lastRaw = rawVal;
           
-          // ESP32 12-bit ADC Dynamic Polynomial Calibration (Non-linear compensation)
-          const rawMv = (0.000000156 * Math.pow(rawVal, 3)) - (0.00048 * Math.pow(rawVal, 2)) + (1.05 * rawVal) + 150; 
-          
-          // Dynamic DC offset tracking (High-pass filter for baseline wander)
-          filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
-          const acMv = rawMv - filterRef.current.dcOffset; 
+          // 1. แปลงค่าแรงดันดิบตรงๆ (Direct Raw ADC to Voltage) ไม่มี Gain/Scale Factor
+          const rawMv = (rawVal / 4095.0) * 3300.0;
           
           if (calibRef.current.isActive) {
             calibRef.current.rawBuffer.push(rawMv);
@@ -611,9 +607,6 @@ function App() {
           }
 
           if (sessionRef.current.isActive) {
-            // 3. Raw Oscilloscope View (No smoothing)
-            const plotValue = rawMv - 1650; // Offset for centered display
-
             // Pure State Machine - Dual Threshold Grip Counting using RAW values
             if (rawMv >= sessionRef.current.startMv && !sessionRef.current.isGripping) {
                sessionRef.current.isGripping = true;
@@ -625,8 +618,7 @@ function App() {
 
             newPoints.push({ 
               time: timeRef.current++, 
-              rawMv: rawMv, 
-              plotValue: plotValue 
+              rawMv: rawMv
             });
           }
         }
@@ -669,7 +661,7 @@ function App() {
 
       if (sessionRef.current.isActive && newPoints.length > 0) {
         setEmgData(prevData => {
-          const combined = [...prevData, ...newPoints].slice(-400);
+          const combined = [...prevData, ...newPoints].slice(-300); // 300 points sliding window
           return combined;
         });
 
@@ -887,14 +879,16 @@ function App() {
             <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
               <XAxis dataKey="time" hide />
-              <YAxis domain={[-1500, 1500]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 3300]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
-              <ReferenceLine y={startGripMv - 1650} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+              <ReferenceLine y={1650} stroke="var(--border-color)" strokeDasharray="3 3" />
+              
+              <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.startAt} ${startGripMv.toFixed(0)} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv - 1650} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+              <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.stopAt} ${stopGripMv.toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
-              <Line type="linear" dataKey="plotValue" stroke="var(--accent-teal)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              <Line type="linear" dataKey="rawMv" stroke="var(--accent-teal)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
