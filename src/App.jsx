@@ -332,6 +332,7 @@ function App() {
     gripCount: 0,
     lastGripTime: 0,
     rawBuffer: [],
+    envelopeBuffer: [],
   });
 
   useEffect(() => {
@@ -382,6 +383,7 @@ function App() {
     sessionRef.current.isGripping = false;
     sessionRef.current.lastGripTime = 0;
     sessionRef.current.rawBuffer = [];
+    sessionRef.current.envelopeBuffer = [];
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
   };
@@ -564,19 +566,27 @@ function App() {
           const calibratedMv = acMv;
 
           if (sessionRef.current.isActive) {
-            newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv });
+            // Signal Envelope processing
+            const positiveMv = Math.abs(acMv); // acMv is already (rawMv - dcOffset)
+            sessionRef.current.envelopeBuffer.push(positiveMv);
+            if (sessionRef.current.envelopeBuffer.length > 20) {
+              sessionRef.current.envelopeBuffer.shift();
+            }
+            
+            // Calculate Moving Average
+            const envelopeMv = sessionRef.current.envelopeBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.envelopeBuffer.length;
+
+            newPoints.push({ time: timeRef.current++, value: rawMv, zeroCenteredValue: acMv, raw: rawVal, rawMv: rawMv, calibratedMv: acMv, envelopeMv: envelopeMv });
 
             const nowTime = Date.now();
             sessionRef.current.rawBuffer.push({ timeMs: nowTime, value: rawMv });
 
-            const COOLDOWN_MS = 300; // Cooldown period for debounce
-
-            if (!sessionRef.current.isGripping && rawMv >= sessionRef.current.startMv && (nowTime - sessionRef.current.lastGripTime > COOLDOWN_MS)) {
+            // Dual Threshold (Hysteresis Logic) without time delay
+            if (!sessionRef.current.isGripping && envelopeMv >= sessionRef.current.startMv) {
                sessionRef.current.isGripping = true;
-               sessionRef.current.lastGripTime = nowTime;
                newGripCount++;
                sessionRef.current.gripCount = newGripCount;
-             } else if (sessionRef.current.isGripping && rawMv < sessionRef.current.stopMv) {
+             } else if (sessionRef.current.isGripping && envelopeMv <= sessionRef.current.stopMv) {
                sessionRef.current.isGripping = false;
              }
           }
