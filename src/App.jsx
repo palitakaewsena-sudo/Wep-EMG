@@ -306,7 +306,7 @@ function App() {
   const [calibTimeLeft, setCalibTimeLeft] = useState(0);
 
   // Data & Signal State
-  const [emgData, setEmgData] = useState(Array.from({ length: 300 }, (_, i) => ({ time: i, rawMv: 0 })));
+  const [emgData, setEmgData] = useState([]);
   const [currentVpp, setCurrentVpp] = useState(0);
   const [currentVmax, setCurrentVmax] = useState(0);
   const [currentVmin, setCurrentVmin] = useState(0);
@@ -348,6 +348,8 @@ function App() {
     releaseTime: 0,
     maBuffer: [],
     emaValue: 0,
+    currentVoltage: 0,
+    startTime: 0,
   });
 
   useEffect(() => {
@@ -384,6 +386,35 @@ function App() {
     }
     return () => clearInterval(interval);
   }, [isSessionActive, timeLeft]);
+
+  // Chart Update Interval (100ms) during active session
+  useEffect(() => {
+    let chartInterval;
+    if (isSessionActive) {
+      sessionRef.current.startTime = Date.now();
+      setEmgData([]); // Reset data
+      
+      chartInterval = setInterval(() => {
+        const elapsed = (Date.now() - sessionRef.current.startTime) / 1000;
+        const currentEnv = sessionRef.current.currentVoltage || 0;
+        const currentThr = sessionRef.current.startMv;
+        
+        setEmgData(prev => {
+          // Add new data point every 100ms
+          const newPoint = { 
+            time: parseFloat(elapsed.toFixed(1)), 
+            env: currentEnv, 
+            thr: currentThr 
+          };
+          // Keep the last 100 points (10 seconds)
+          return [...prev, newPoint].slice(-100);
+        });
+      }, 100);
+    }
+    return () => {
+      if (chartInterval) clearInterval(chartInterval);
+    };
+  }, [isSessionActive]);
 
   // Calibration Timer
   useEffect(() => {
@@ -447,12 +478,11 @@ function App() {
     sessionRef.current.emaValue = 0;
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
-    setEmgData(Array.from({ length: 300 }, (_, i) => ({ time: i, rawMv: 0 })));
+    // setEmgData will be initialized by the new interval useEffect
   };
 
   const handleStopSession = () => {
     setIsSessionActive(false);
-    setEmgData(Array.from({ length: 300 }, (_, i) => ({ time: i, rawMv: 0 })));
     setCurrentVpp(0);
   };
 
@@ -460,7 +490,7 @@ function App() {
     setIsSessionActive(false);
     setGripCount(0);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
-    setEmgData(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
+    setEmgData([]);
     setCurrentVpp(0);
   };
 
@@ -486,6 +516,9 @@ function App() {
       }
       return updated;
     });
+
+    alert(lang === 'th' ? 'จบเซสชันการฝึกแล้ว ระบบจะพาไปยังหน้าประวัติ' : 'Session complete. Navigating to history...');
+    setActiveTab('history');
   }
 
   const handleConnect = async () => {
@@ -588,7 +621,6 @@ function App() {
       let lines = bufferRef.current.split('\n');
       bufferRef.current = lines.pop(); 
       
-      let newPoints = [];
       let newGripCount = sessionRef.current.gripCount;
       let lastRaw = 0;
 
@@ -624,6 +656,8 @@ function App() {
           // Multiply by 1.57 (pi/2) to approximate peak amplitude of a wave from its average absolute value
           const envelopePeak = envelopeMa * 1.57;
           const current_voltage_mV = envelopePeak + filterRef.current.dcOffset;
+          
+          sessionRef.current.currentVoltage = current_voltage_mV;
           
           // Debug UI update
           if (debugTextRef.current) {
@@ -664,11 +698,6 @@ function App() {
                 sessionRef.current.gripState = 0;
               }
             }
-
-            newPoints.push({ 
-              time: timeRef.current++, 
-              rawMv: rawMv
-            });
           }
         }
       }
@@ -713,12 +742,7 @@ function App() {
 
       if (lastRaw > 0) setRawAdc(lastRaw);
 
-      if (sessionRef.current.isActive && newPoints.length > 0) {
-        setEmgData(prevData => {
-          const combined = [...prevData, ...newPoints].slice(-300); // 300 points sliding window
-          return combined;
-        });
-
+      if (sessionRef.current.isActive) {
         if (newGripCount !== gripCount) {
            setGripCount(newGripCount);
         }
@@ -932,7 +956,7 @@ function App() {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-              <XAxis dataKey="time" hide />
+              <XAxis dataKey="time" type="number" domain={['dataMin', 'dataMax']} tickFormatter={(val) => `${val.toFixed(1)}s`} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               <YAxis domain={[0, 3300]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
               <ReferenceLine y={1650} stroke="var(--border-color)" strokeDasharray="3 3" />
@@ -942,7 +966,7 @@ function App() {
               <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.stopAt} ${stopGripMv.toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
-              <Line type="linear" dataKey="rawMv" stroke="var(--accent-teal)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              <Line type="linear" dataKey="env" stroke="var(--accent-teal)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
