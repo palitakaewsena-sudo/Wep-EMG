@@ -339,7 +339,7 @@ function App() {
     isActive: false, 
     startMv: 978.0, 
     stopMv: 880.0,
-    gripState: 0,
+    isGripping: false,
     gripCount: 0,
     lastGripTime: 0,
     rawBuffer: [],
@@ -437,7 +437,7 @@ function App() {
     if (!isConnected) return;
     setGripCount(0);
     sessionRef.current.gripCount = 0;
-    sessionRef.current.gripState = 0;
+    sessionRef.current.isGripping = false;
     sessionRef.current.lastGripTime = 0;
     sessionRef.current.rawBuffer = [];
     sessionRef.current.envelopeBuffer = [];
@@ -609,7 +609,7 @@ function App() {
           }
           
           // อัปเดต baseline เฉพาะตอนไม่ได้กำมือ (ป้องกัน baseline เลื่อนตามแรงกำ)
-          if (sessionRef.current.gripState === 0) {
+          if (sessionRef.current.isGripping === false) {
             filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
           }
           
@@ -636,9 +636,7 @@ function App() {
           
           // Debug UI update
           if (debugTextRef.current) {
-            let stateName = "IDLE";
-            if (sessionRef.current.gripState === 1) stateName = "GRIPPING";
-            else if (sessionRef.current.gripState === 2) stateName = "COOLDOWN";
+            let stateName = sessionRef.current.isGripping ? "GRIPPING" : "IDLE";
             
             debugTextRef.current.innerText = `State: ${stateName} | Env: ${current_voltage_mV.toFixed(0)}mV | Thr: ${sessionRef.current.startMv.toFixed(0)}mV`;
           }
@@ -656,21 +654,16 @@ function App() {
           if (sessionRef.current.isActive) {
             const now = Date.now();
             
-            // 3-State Machine for Grip Counting
-            if (sessionRef.current.gripState === 0) { // IDLE
+            // 2-State Machine for Grip Counting (Rising Edge Detection with Hysteresis)
+            if (sessionRef.current.isGripping === false) {
               if (current_voltage_mV >= sessionRef.current.startMv) {
-                sessionRef.current.gripState = 1;
+                sessionRef.current.isGripping = true;
                 newGripCount++;
                 sessionRef.current.gripCount = newGripCount;
               }
-            } else if (sessionRef.current.gripState === 1) { // GRIPPING
-              if (current_voltage_mV <= sessionRef.current.stopMv) {
-                sessionRef.current.gripState = 2;
-                sessionRef.current.releaseTime = now;
-              }
-            } else if (sessionRef.current.gripState === 2) { // COOLDOWN
-              if (now - sessionRef.current.releaseTime > 600) { // 600ms Cooldown
-                sessionRef.current.gripState = 0;
+            } else {
+              if (current_voltage_mV < sessionRef.current.stopMv) {
+                sessionRef.current.isGripping = false;
               }
             }
 
