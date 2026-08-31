@@ -699,8 +699,8 @@ function App() {
           const rawVal = parseFloat(line); // Assuming ADC 12-bit
           lastRaw = rawVal;
           
-          // 1. แปลงค่าแรงดันดิบตรงๆ (Direct Raw ADC to Voltage)
-          let rawMv = (rawVal / 4095.0) * 3300.0;
+          // 1. แปลงค่าแรงดันดิบพร้อมชดเชยความเพี้ยน ADC ของ ESP32 (ESP32 ADC Non-linearity Compensation)
+          let rawMv = ((rawVal / 4095.0) * 3300.0 * 1.28) + 20.0;
 
           // 2. High-pass filter (DC Offset tracking)
           if (!filterRef.current.initialized) {
@@ -801,8 +801,8 @@ function App() {
         // Calculate Vmax, Vmin, Vp-p dynamically from real-time peak-hold buffer
         if (sessionRef.current.peakHoldBuffer.length > 0) {
           const nowUI = Date.now();
-          // อัปเดต UI ทุกๆ 500ms เพื่อให้ตัวเลขนิ่ง อ่านง่ายแบบหน้าจอออสสิโลสโคป
-          if (nowUI - sessionRef.current.lastUiUpdate >= 500) {
+          // อัปเดต UI ทุกๆ 800-1000ms (1 Hz) เพื่อให้ตัวเลขนิ่ง อ่านง่ายแบบหน้าจอออสสิโลสโคป
+          if (nowUI - sessionRef.current.lastUiUpdate >= 800) {
             sessionRef.current.lastUiUpdate = nowUI;
             
             const buffermV = sessionRef.current.peakHoldBuffer;
@@ -810,9 +810,10 @@ function App() {
             const Vmin = Math.min(...buffermV);
             const Vpp = Vmax - Vmin;
             
-            setCurrentVmax(Vmax);
-            setCurrentVmin(Vmin);
-            setCurrentVpp(Vpp);
+            // กรองตัวเลขนิ่งด้วย Exponential Moving Average (EMA)
+            setCurrentVmax(prev => (prev === 0 ? Vmax : (prev * 0.8) + (Vmax * 0.2)));
+            setCurrentVmin(prev => (prev === 0 ? Vmin : (prev * 0.8) + (Vmin * 0.2)));
+            setCurrentVpp(prev => (prev === 0 ? Vpp : (prev * 0.8) + (Vpp * 0.2)));
             telemetryRef.current.vpp = Vpp;
 
             let newFreq = 0.0;
