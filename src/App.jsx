@@ -781,24 +781,24 @@ function App() {
       }
       
       if (sessionRef.current.isActive || calibRef.current.isActive) {
-        // Calculate Vmax, Vmin, Vp-p from chartData array (300 samples)
+        // Calculate Vmax, Vmin, Vp-p dynamically from real-time buffer
         if (sessionRef.current.rawBuffer.length > 0) {
-          const chartDataVoltages = sessionRef.current.rawBuffer;
-          const winMax = Math.max(...chartDataVoltages);
-          const winMin = Math.min(...chartDataVoltages);
-          const vpp = winMax - winMin;
+          const buffermV = sessionRef.current.rawBuffer;
+          const Vmax = Math.max(...buffermV);
+          const Vmin = Math.min(...buffermV);
+          const Vpp = Vmax - Vmin;
           
-          setCurrentVmax(winMax);
-          setCurrentVmin(winMin);
-          setCurrentVpp(vpp);
-          telemetryRef.current.vpp = vpp;
+          setCurrentVmax(Vmax);
+          setCurrentVmin(Vmin);
+          setCurrentVpp(Vpp);
+          telemetryRef.current.vpp = Vpp;
 
           let newFreq = 0.0;
 
           // Frequency calculated only if signal is large enough (Vp-p >= 50mV)
-          if (vpp >= 50.0) {
+          if (Vpp >= 50.0) {
             // Calculate Frequency from Period (T) of the signal using the chart data
-            const freqBuffer = chartDataVoltages;
+            const freqBuffer = buffermV;
             const meanVal = freqBuffer.reduce((a, b) => a + b, 0) / freqBuffer.length;
             let zcIndices = [];
             let isAbove = freqBuffer[0] > meanVal;
