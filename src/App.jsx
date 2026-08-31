@@ -960,7 +960,7 @@ function App() {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-              <XAxis dataKey="time" hide />
+              <XAxis dataKey="time" tick={{ fontSize: 12, fill: '#666666' }} minTickGap={30} />
               <YAxis domain={[0, 3300]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               
               <ReferenceLine y={1650} stroke="var(--border-color)" strokeDasharray="3 3" />
