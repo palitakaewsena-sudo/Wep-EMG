@@ -690,7 +690,6 @@ function App() {
           
           // 1. แปลงค่าแรงดันดิบตรงๆ (Direct Raw ADC to Voltage)
           let rawMv = (rawVal / 4095.0) * 3300.0;
-          if (rawMv > 3300.0) rawMv = 3300.0; // Clamp to max 3300mV
 
           // 2. High-pass filter (DC Offset tracking)
           if (!filterRef.current.initialized) {
@@ -794,29 +793,33 @@ function App() {
           setCurrentVpp(vpp);
           telemetryRef.current.vpp = vpp;
 
-          // Calculate Frequency from Zero-Crossing Rate (ZCR) with Hysteresis over the mean of window
+          // Calculate Frequency from Period (T) of the signal
           const meanVal = bufferValues.reduce((a, b) => a + b, 0) / bufferValues.length;
-          let zcCount = 0;
+          let zcIndices = [];
           let isAbove = bufferValues[0] > meanVal;
           const hysteresis = 50.0; // +/- 50 mV noise margin
           
           for (let i = 1; i < bufferValues.length; i++) {
             if (!isAbove && bufferValues[i] > meanVal + hysteresis) {
               isAbove = true;
-              zcCount++;
+              zcIndices.push(i);
             } else if (isAbove && bufferValues[i] < meanVal - hysteresis) {
               isAbove = false;
             }
           }
           
-          // At 500 samples = 1 sec window exactly, ZCR directly equals Hz
-          // To be safe, factor in actual buffer size in case it hasn't reached 500 yet
-          let windowSecs = bufferValues.length / 500.0;
-          let newFreq = zcCount / windowSecs;
+          let newFreq = 0.0;
+          if (zcIndices.length > 1) {
+            // Calculate average period (T) in samples between first and last crossing
+            const totalSamples = zcIndices[zcIndices.length - 1] - zcIndices[0];
+            const numPeriods = zcIndices.length - 1;
+            const avgPeriodSamples = totalSamples / numPeriods;
+            
+            // Assume 500 samples/sec (2ms per sample)
+            const T_seconds = avgPeriodSamples / 500.0;
+            newFreq = 1.0 / T_seconds;
+          }
           
-          // Clamp frequency
-          if (newFreq < 0.5 && newFreq > 0) newFreq = 0.5;
-          if (newFreq > 200) newFreq = 200.0;
           setCurrentFreq(newFreq);
         }
 
