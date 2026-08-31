@@ -589,7 +589,6 @@ function App() {
       bufferRef.current = lines.pop(); 
       
       let newPoints = [];
-      let newGripCount = sessionRef.current.gripCount;
       let lastRaw = 0;
 
       for (let line of lines) {
@@ -655,14 +654,20 @@ function App() {
             const now = Date.now();
             
             // 2-State Machine for Grip Counting (Rising Edge Detection with Hysteresis)
+            const currentVal = Number(current_voltage_mV);
+            const triggerThr = Number(sessionRef.current.startMv);
+            const releaseThr = Number(sessionRef.current.stopMv);
+            
+            console.log(`[EMG Check] Val: ${currentVal.toFixed(1)} | Thr: ${triggerThr} | Gripping: ${sessionRef.current.isGripping}`);
+
             if (sessionRef.current.isGripping === false) {
-              if (current_voltage_mV >= sessionRef.current.startMv) {
+              if (currentVal >= triggerThr) {
                 sessionRef.current.isGripping = true;
-                newGripCount++;
-                sessionRef.current.gripCount = newGripCount;
+                sessionRef.current.gripCount++;
+                setGripCount(prev => prev + 1); // บังคับใช้อัปเดตแบบ Functional State ป้องกัน Stale Closure
               }
             } else {
-              if (current_voltage_mV < sessionRef.current.stopMv) {
+              if (currentVal < releaseThr) {
                 sessionRef.current.isGripping = false;
               }
             }
@@ -720,10 +725,6 @@ function App() {
           const combined = [...prevData, ...newPoints].slice(-300); // 300 points sliding window
           return combined;
         });
-
-        if (newGripCount !== gripCount) {
-           setGripCount(newGripCount);
-        }
       }
     };
 
