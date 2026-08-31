@@ -413,6 +413,7 @@ function App() {
     releaseTime: 0,
     maBuffer: [],
     emaValue: 0,
+    lastUiUpdate: 0,
   });
 
   const [completionModal, setCompletionModal] = useState({ show: false, reason: '', grips: 0, time: 0 });
@@ -799,48 +800,54 @@ function App() {
       if (sessionRef.current.isActive || calibRef.current.isActive) {
         // Calculate Vmax, Vmin, Vp-p dynamically from real-time peak-hold buffer
         if (sessionRef.current.peakHoldBuffer.length > 0) {
-          const buffermV = sessionRef.current.peakHoldBuffer;
-          const Vmax = Math.max(...buffermV);
-          const Vmin = Math.min(...buffermV);
-          const Vpp = Vmax - Vmin;
-          
-          setCurrentVmax(Vmax);
-          setCurrentVmin(Vmin);
-          setCurrentVpp(Vpp);
-          telemetryRef.current.vpp = Vpp;
-
-          let newFreq = 0.0;
-
-          // Frequency calculated only if signal is large enough (Vp-p >= 50mV)
-          if (Vpp >= 50.0) {
-            // Calculate Frequency from Period (T) of the signal using the chart data
-            const freqBuffer = buffermV;
-            const meanVal = freqBuffer.reduce((a, b) => a + b, 0) / freqBuffer.length;
-            let zcIndices = [];
-            let isAbove = freqBuffer[0] > meanVal;
-            const hysteresis = 50.0; // +/- 50 mV noise margin
+          const nowUI = Date.now();
+          // อัปเดต UI ทุกๆ 500ms เพื่อให้ตัวเลขนิ่ง อ่านง่ายแบบหน้าจอออสสิโลสโคป
+          if (nowUI - sessionRef.current.lastUiUpdate >= 500) {
+            sessionRef.current.lastUiUpdate = nowUI;
             
-            for (let i = 1; i < freqBuffer.length; i++) {
-              if (!isAbove && freqBuffer[i] > meanVal + hysteresis) {
-                isAbove = true;
-                zcIndices.push(i);
-              } else if (isAbove && freqBuffer[i] < meanVal - hysteresis) {
-                isAbove = false;
+            const buffermV = sessionRef.current.peakHoldBuffer;
+            const Vmax = Math.max(...buffermV);
+            const Vmin = Math.min(...buffermV);
+            const Vpp = Vmax - Vmin;
+            
+            setCurrentVmax(Vmax);
+            setCurrentVmin(Vmin);
+            setCurrentVpp(Vpp);
+            telemetryRef.current.vpp = Vpp;
+
+            let newFreq = 0.0;
+
+            // Frequency calculated only if signal is large enough (Vp-p >= 50mV)
+            if (Vpp >= 50.0) {
+              // Calculate Frequency from Period (T) of the signal using the chart data
+              const freqBuffer = buffermV;
+              const meanVal = freqBuffer.reduce((a, b) => a + b, 0) / freqBuffer.length;
+              let zcIndices = [];
+              let isAbove = freqBuffer[0] > meanVal;
+              const hysteresis = 50.0; // +/- 50 mV noise margin
+              
+              for (let i = 1; i < freqBuffer.length; i++) {
+                if (!isAbove && freqBuffer[i] > meanVal + hysteresis) {
+                  isAbove = true;
+                  zcIndices.push(i);
+                } else if (isAbove && freqBuffer[i] < meanVal - hysteresis) {
+                  isAbove = false;
+                }
+              }
+              
+              if (zcIndices.length > 1) {
+                // Calculate period (T) in samples between the LAST TWO crossings
+                const lastTwo = zcIndices.slice(-2);
+                const periodSamples = lastTwo[1] - lastTwo[0];
+                
+                // Assume 500 samples/sec (2ms per sample)
+                const T_seconds = periodSamples / 500.0;
+                newFreq = 1.0 / T_seconds;
               }
             }
             
-            if (zcIndices.length > 1) {
-              // Calculate period (T) in samples between the LAST TWO crossings
-              const lastTwo = zcIndices.slice(-2);
-              const periodSamples = lastTwo[1] - lastTwo[0];
-              
-              // Assume 500 samples/sec (2ms per sample)
-              const T_seconds = periodSamples / 500.0;
-              newFreq = 1.0 / T_seconds;
-            }
+            setCurrentFreq(newFreq);
           }
-          
-          setCurrentFreq(newFreq);
         }
 
         if (lastRaw > 0) setRawAdc(lastRaw);
