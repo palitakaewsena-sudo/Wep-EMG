@@ -732,10 +732,10 @@ function App() {
             calibRef.current.rawBuffer.push(current_voltage_mV); // Calibrate using matching envelope voltage
           }
 
-          // Always push to sliding window for telemetry (2500 samples = 5 seconds) ONLY if active
+          // Always push to sliding window for telemetry (300 samples = matching chart width) ONLY if active
           if (sessionRef.current.isActive || calibRef.current.isActive) {
             sessionRef.current.rawBuffer.push(rawMv);
-            if (sessionRef.current.rawBuffer.length > 2500) {
+            if (sessionRef.current.rawBuffer.length > 300) {
               sessionRef.current.rawBuffer.shift();
             }
           }
@@ -781,11 +781,11 @@ function App() {
       }
       
       if (sessionRef.current.isActive || calibRef.current.isActive) {
-        // Calculate Vmax, Vmin, Vp-p from up to 5 seconds window (2500 samples)
+        // Calculate Vmax, Vmin, Vp-p from chartData array (300 samples)
         if (sessionRef.current.rawBuffer.length > 0) {
-          const bufferValues = sessionRef.current.rawBuffer;
-          const winMax = Math.max(...bufferValues);
-          const winMin = Math.min(...bufferValues);
+          const chartDataVoltages = sessionRef.current.rawBuffer;
+          const winMax = Math.max(...chartDataVoltages);
+          const winMin = Math.min(...chartDataVoltages);
           const vpp = winMax - winMin;
           
           setCurrentVmax(winMax);
@@ -795,10 +795,10 @@ function App() {
 
           let newFreq = 0.0;
 
-          // Frequency calculated only if signal is large enough (Vp-p >= 10mV)
-          if (vpp >= 10.0) {
-            // Calculate Frequency from Period (T) of the signal using only the last 1 second (last 500 samples)
-            const freqBuffer = bufferValues.slice(-500);
+          // Frequency calculated only if signal is large enough (Vp-p >= 50mV)
+          if (vpp >= 50.0) {
+            // Calculate Frequency from Period (T) of the signal using the chart data
+            const freqBuffer = chartDataVoltages;
             const meanVal = freqBuffer.reduce((a, b) => a + b, 0) / freqBuffer.length;
             let zcIndices = [];
             let isAbove = freqBuffer[0] > meanVal;
