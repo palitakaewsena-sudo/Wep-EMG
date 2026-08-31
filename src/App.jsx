@@ -784,13 +784,9 @@ function App() {
         // Calculate Vmax, Vmin, Vp-p from up to 5 seconds window (2500 samples)
         if (sessionRef.current.rawBuffer.length > 0) {
           const bufferValues = sessionRef.current.rawBuffer;
-          const vmaxBuffer = bufferValues.slice(-1000); // 1-2 seconds window (1000 samples)
-          const sortedForMax = [...vmaxBuffer].sort((a, b) => a - b);
-          // Filter out top 5% noise spikes
-          const winMax = sortedForMax.length > 0 ? sortedForMax[Math.floor(sortedForMax.length * 0.95)] : 0;
-          
+          const winMax = Math.max(...bufferValues);
           const winMin = Math.min(...bufferValues);
-          const vpp = winMax > winMin ? winMax - winMin : 0;
+          const vpp = winMax - winMin;
           
           setCurrentVmax(winMax);
           setCurrentVmin(winMin);
@@ -799,8 +795,8 @@ function App() {
 
           let newFreq = 0.0;
 
-          // Frequency calculated only if signal is large enough (Vp-p >= 50mV)
-          if (vpp >= 50.0) {
+          // Frequency calculated only if signal is large enough (Vp-p >= 10mV)
+          if (vpp >= 10.0) {
             // Calculate Frequency from Period (T) of the signal using only the last 1 second (last 500 samples)
             const freqBuffer = bufferValues.slice(-500);
             const meanVal = freqBuffer.reduce((a, b) => a + b, 0) / freqBuffer.length;
