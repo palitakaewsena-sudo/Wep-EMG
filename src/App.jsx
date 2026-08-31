@@ -607,7 +607,12 @@ function App() {
             filterRef.current.dcOffset = rawMv;
             filterRef.current.initialized = true;
           }
-          filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
+          
+          // อัปเดต baseline เฉพาะตอนไม่ได้กำมือ (ป้องกัน baseline เลื่อนตามแรงกำ)
+          if (sessionRef.current.gripState === 0) {
+            filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
+          }
+          
           const acMv = rawMv - filterRef.current.dcOffset;
 
           // 3. Notch Filter (Moving Average 10 samples for 50Hz/60Hz noise)
