@@ -360,7 +360,7 @@ function App() {
   const [calibTimeLeft, setCalibTimeLeft] = useState(0);
 
   // Data & Signal State
-  const [emgData, setEmgData] = useState(Array.from({ length: 300 }, (_, i) => ({ time: i, rawMv: 0 })));
+  const [emgData, setEmgData] = useState(Array.from({ length: 300 }, (_, i) => ({ time: "0.0s", rawMv: 0 })));
   const [currentVpp, setCurrentVpp] = useState(0);
   const [currentVmax, setCurrentVmax] = useState(0);
   const [currentVmin, setCurrentVmin] = useState(0);
@@ -733,10 +733,12 @@ function App() {
             calibRef.current.rawBuffer.push(current_voltage_mV); // Calibrate using matching envelope voltage
           }
 
-          // Always push to sliding window for telemetry (500 samples)
-          sessionRef.current.rawBuffer.push(rawMv);
-          if (sessionRef.current.rawBuffer.length > 500) {
-            sessionRef.current.rawBuffer.shift();
+          // Always push to sliding window for telemetry (500 samples) ONLY if active
+          if (sessionRef.current.isActive || calibRef.current.isActive) {
+            sessionRef.current.rawBuffer.push(rawMv);
+            if (sessionRef.current.rawBuffer.length > 500) {
+              sessionRef.current.rawBuffer.shift();
+            }
           }
 
           if (sessionRef.current.isActive) {
@@ -779,51 +781,53 @@ function App() {
         }
       }
       
-      // Calculate Vmax, Vmin, Vp-p, Freq from 500-sample window
-      if (sessionRef.current.rawBuffer.length > 0) {
-        const bufferValues = sessionRef.current.rawBuffer;
-        const winMax = Math.max(...bufferValues);
-        const winMin = Math.min(...bufferValues);
-        const vpp = winMax - winMin;
-        
-        setCurrentVmax(winMax);
-        setCurrentVmin(winMin);
-        setCurrentVpp(vpp);
-        telemetryRef.current.vpp = vpp;
+      if (sessionRef.current.isActive || calibRef.current.isActive) {
+        // Calculate Vmax, Vmin, Vp-p, Freq from 500-sample window
+        if (sessionRef.current.rawBuffer.length > 0) {
+          const bufferValues = sessionRef.current.rawBuffer;
+          const winMax = Math.max(...bufferValues);
+          const winMin = Math.min(...bufferValues);
+          const vpp = winMax - winMin;
+          
+          setCurrentVmax(winMax);
+          setCurrentVmin(winMin);
+          setCurrentVpp(vpp);
+          telemetryRef.current.vpp = vpp;
 
-        // Calculate Frequency from Zero-Crossing Rate (ZCR) with Hysteresis over the mean of window
-        const meanVal = bufferValues.reduce((a, b) => a + b, 0) / bufferValues.length;
-        let zcCount = 0;
-        let isAbove = bufferValues[0] > meanVal;
-        const hysteresis = 50.0; // +/- 50 mV noise margin
-        
-        for (let i = 1; i < bufferValues.length; i++) {
-          if (!isAbove && bufferValues[i] > meanVal + hysteresis) {
-            isAbove = true;
-            zcCount++;
-          } else if (isAbove && bufferValues[i] < meanVal - hysteresis) {
-            isAbove = false;
+          // Calculate Frequency from Zero-Crossing Rate (ZCR) with Hysteresis over the mean of window
+          const meanVal = bufferValues.reduce((a, b) => a + b, 0) / bufferValues.length;
+          let zcCount = 0;
+          let isAbove = bufferValues[0] > meanVal;
+          const hysteresis = 50.0; // +/- 50 mV noise margin
+          
+          for (let i = 1; i < bufferValues.length; i++) {
+            if (!isAbove && bufferValues[i] > meanVal + hysteresis) {
+              isAbove = true;
+              zcCount++;
+            } else if (isAbove && bufferValues[i] < meanVal - hysteresis) {
+              isAbove = false;
+            }
           }
+          
+          // At 500 samples = 1 sec window exactly, ZCR directly equals Hz
+          // To be safe, factor in actual buffer size in case it hasn't reached 500 yet
+          let windowSecs = bufferValues.length / 500.0;
+          let newFreq = zcCount / windowSecs;
+          
+          // Clamp frequency
+          if (newFreq < 0.5 && newFreq > 0) newFreq = 0.5;
+          if (newFreq > 200) newFreq = 200.0;
+          setCurrentFreq(newFreq);
         }
-        
-        // At 500 samples = 1 sec window exactly, ZCR directly equals Hz
-        // To be safe, factor in actual buffer size in case it hasn't reached 500 yet
-        let windowSecs = bufferValues.length / 500.0;
-        let newFreq = zcCount / windowSecs;
-        
-        // Clamp frequency
-        if (newFreq < 0.5 && newFreq > 0) newFreq = 0.5;
-        if (newFreq > 200) newFreq = 200.0;
-        setCurrentFreq(newFreq);
-      }
 
-      if (lastRaw > 0) setRawAdc(lastRaw);
+        if (lastRaw > 0) setRawAdc(lastRaw);
 
-      if (sessionRef.current.isActive && newPoints.length > 0) {
-        setEmgData(prevData => {
-          const combined = [...prevData, ...newPoints].slice(-300); // 300 points sliding window
-          return combined;
-        });
+        if (sessionRef.current.isActive && newPoints.length > 0) {
+          setEmgData(prevData => {
+            const combined = [...prevData, ...newPoints].slice(-300); // 300 points sliding window
+            return combined;
+          });
+        }
       }
     };
 
