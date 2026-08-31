@@ -120,8 +120,8 @@ const i18n = {
     unitSec: "วินาที",
     unitGrips: "ครั้ง",
     repoNoData: "ยังไม่มีข้อมูลผู้ทดสอบ คลิก 'เพิ่มทดสอบใหม่' เพื่อเริ่มต้น",
-    repoSelected: "✓ เลือกแล้ว",
-    repoNotSelected: "ยังไม่ได้เลือก",
+    repoSelected: "✓ เลือกแล้ว (Selected)",
+    repoNotSelected: "เลือก (Select)",
     addTesterTitle: "เพิ่มผู้ทดสอบใหม่ (Add Tester)",
     addTesterName: "ชื่อ-นามสกุล (Name)",
     addTesterAge: "อายุ (Age)",
@@ -243,7 +243,7 @@ const i18n = {
     unitGrips: "grips",
     repoNoData: "No testers yet. Click 'Add Tester' to begin.",
     repoSelected: "✓ Selected",
-    repoNotSelected: "Not Selected",
+    repoNotSelected: "Select",
     addTesterTitle: "Add Tester",
     addTesterName: "Name",
     addTesterAge: "Age",
@@ -262,9 +262,16 @@ function App() {
   const [activeTab, setActiveTab] = useState('testers');
 
   // Testers State
+  const initialTesters = [
+    { id: '1', name: 'นน', age: '25', gender: 'ชาย / Male', weight: '65', height: '170', hand: 'ขวา / Right', createdAt: new Date().toISOString() },
+    { id: '2', name: 'ชล', age: '22', gender: 'หญิง / Female', weight: '50', height: '160', hand: 'ขวา / Right', createdAt: new Date().toISOString() },
+    { id: '3', name: 'คิม', age: '28', gender: 'ชาย / Male', weight: '70', height: '175', hand: 'ซ้าย / Left', createdAt: new Date().toISOString() },
+    { id: '4', name: 'ขวัญ', age: '30', gender: 'หญิง / Female', weight: '55', height: '165', hand: 'ขวา / Right', createdAt: new Date().toISOString() }
+  ];
+
   const [testers, setTesters] = useState(() => {
     const saved = localStorage.getItem('emg_testers');
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved) : initialTesters;
   });
   const [activeTesterId, setActiveTesterId] = useState(() => {
     return localStorage.getItem('emg_active_tester') || null;
@@ -893,7 +900,15 @@ function App() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
         {filteredTesters.length > 0 ? (
           filteredTesters.map(t => (
-            <div key={t.id} className="tester-card" style={{ border: activeTesterId === t.id ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)' }}>
+            <div 
+              key={t.id} 
+              className="tester-card" 
+              style={{ 
+                border: activeTesterId === t.id ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                cursor: 'pointer'
+              }}
+              onClick={() => handleSelectTester(t.id)}
+            >
               <div className="tester-card-header">
                 <div className="tester-avatar">
                   {t.name.charAt(0)}
@@ -906,20 +921,21 @@ function App() {
               <div className="tester-actions">
                 <button 
                   className={`btn-select ${activeTesterId === t.id ? 'active' : ''}`} 
-                  onClick={() => handleSelectTester(t.id)}
+                  onClick={(e) => { e.stopPropagation(); handleSelectTester(t.id); }}
                   style={{
                     backgroundColor: activeTesterId === t.id ? 'var(--accent-teal)' : 'transparent',
                     color: activeTesterId === t.id ? 'white' : 'var(--text-primary)',
-                    border: activeTesterId === t.id ? 'none' : '1px solid var(--border-color)'
+                    border: activeTesterId === t.id ? 'none' : '1px solid var(--border-color)',
+                    cursor: 'pointer'
                   }}
                 >
                   {activeTesterId === t.id ? t.repoSelected : t.repoNotSelected}
                 </button>
                 <div style={{ display: 'flex', gap: '1rem' }}>
-                  <button className="btn-edit" onClick={() => alert('ฟังก์ชันแก้ไขกำลังอยู่ในระหว่างการพัฒนา')}>
+                  <button className="btn-edit" onClick={(e) => { e.stopPropagation(); alert('ฟังก์ชันแก้ไขกำลังอยู่ในระหว่างการพัฒนา'); }}>
                     ✎ {t.btnEdit}
                   </button>
-                  <button className="btn-delete" onClick={() => handleDeleteTester(t.id)}>
+                  <button className="btn-delete" onClick={(e) => { e.stopPropagation(); handleDeleteTester(t.id); }}>
                     🗑 {t.btnDelete}
                   </button>
                 </div>
