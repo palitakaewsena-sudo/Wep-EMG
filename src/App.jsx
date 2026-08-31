@@ -603,6 +603,10 @@ function App() {
           if (rawMv > 3300.0) rawMv = 3300.0; // Clamp to max 3300mV
 
           // 2. High-pass filter (DC Offset tracking)
+          if (!filterRef.current.initialized) {
+            filterRef.current.dcOffset = rawMv;
+            filterRef.current.initialized = true;
+          }
           filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
           const acMv = rawMv - filterRef.current.dcOffset;
 
