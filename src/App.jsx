@@ -103,7 +103,34 @@ const i18n = {
     authLimitReached: "ไม่สามารถลงทะเบียนได้ (สูงสุด 3 คนแล้ว)",
     authWrongPass: "รหัสผ่านไม่ถูกต้อง",
     authEnterPass: "กรุณาใส่รหัสผ่าน",
-    authLogout: "ออกจากระบบ"
+    authLogout: "ออกจากระบบ",
+    
+    // Missing additions
+    activeTesterTitle: "ผู้ทดสอบที่กำลังทดสอบ (Active)",
+    activeTesterNone: "ยังไม่ได้เลือก (None)",
+    deviceStatusTitle: "สถานะอุปกรณ์",
+    repoTitle: "คลังข้อมูลผู้ทดสอบ",
+    repoSub: "จัดการและค้นหารายชื่อผู้เข้ารับการทดสอบทั้งหมด",
+    repoAddBtn: "+ เพิ่มทดสอบใหม่ (Add Tester)",
+    repoSearch: "ค้นหาด้วยชื่อหรือ ID...",
+    btnEdit: "แก้ไข",
+    btnDelete: "ลบ",
+    unitYears: "ปี",
+    unitMin: "นาที",
+    unitSec: "วินาที",
+    unitGrips: "ครั้ง",
+    repoNoData: "ยังไม่มีข้อมูลผู้ทดสอบ คลิก 'เพิ่มทดสอบใหม่' เพื่อเริ่มต้น",
+    repoSelected: "✓ เลือกแล้ว",
+    repoNotSelected: "ยังไม่ได้เลือก",
+    addTesterTitle: "เพิ่มผู้ทดสอบใหม่ (Add Tester)",
+    addTesterName: "ชื่อ-นามสกุล (Name)",
+    addTesterAge: "อายุ (Age)",
+    addTesterGender: "เพศ (Gender)",
+    addTesterWeight: "น้ำหนัก (Weight) - kg",
+    addTesterHeight: "ส่วนสูง (Height) - cm",
+    addTesterHand: "ข้างที่ทดสอบ (Testing Hand)",
+    addTesterCancel: "ยกเลิก",
+    addTesterSave: "บันทึก"
   },
   en: {
     appTitle: "EMG Grip Therapy",
@@ -198,7 +225,34 @@ const i18n = {
     authLimitReached: "Registration limit reached (max 3 users)",
     authWrongPass: "Incorrect password",
     authEnterPass: "Please enter password",
-    authLogout: "Logout"
+    authLogout: "Logout",
+    
+    // Missing additions
+    activeTesterTitle: "Active Tester",
+    activeTesterNone: "None",
+    deviceStatusTitle: "Device Status",
+    repoTitle: "Tester Repository",
+    repoSub: "Manage and search all tester profiles",
+    repoAddBtn: "+ Add Tester",
+    repoSearch: "Search by name or ID...",
+    btnEdit: "Edit",
+    btnDelete: "Delete",
+    unitYears: "years",
+    unitMin: "min",
+    unitSec: "sec",
+    unitGrips: "grips",
+    repoNoData: "No testers yet. Click 'Add Tester' to begin.",
+    repoSelected: "✓ Selected",
+    repoNotSelected: "Not Selected",
+    addTesterTitle: "Add Tester",
+    addTesterName: "Name",
+    addTesterAge: "Age",
+    addTesterGender: "Gender",
+    addTesterWeight: "Weight (kg)",
+    addTesterHeight: "Height (cm)",
+    addTesterHand: "Testing Hand",
+    addTesterCancel: "Cancel",
+    addTesterSave: "Save"
   }
 };
 
@@ -797,18 +851,18 @@ function App() {
     <div>
       <div className="page-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <h2>คลังข้อมูลผู้ทดสอบ</h2>
-          <p>จัดการและค้นหารายชื่อผู้เข้ารับการทดสอบทั้งหมด</p>
+          <h2>{t.repoTitle}</h2>
+          <p>{t.repoSub}</p>
         </div>
         <button className="btn btn-teal" onClick={() => setIsAddingTester(true)}>
-          + เพิ่มทดสอบใหม่ (Add Tester)
+          {t.repoAddBtn}
         </button>
       </div>
 
       <div style={{ marginBottom: '1.5rem' }}>
         <input 
           type="text" 
-          placeholder="ค้นหาด้วยชื่อหรือ ID..." 
+          placeholder={t.repoSearch} 
           className="form-control"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -826,7 +880,7 @@ function App() {
                 </div>
                 <div className="tester-info">
                   <h3>{t.name}</h3>
-                  <p>{t.age} ปี | {t.gender.split(' / ')[0]} | มือ{t.hand.split(' / ')[0]}</p>
+                  <p>{t.age} {t.unitYears} | {lang === 'th' ? t.gender.split(' / ')[0] : t.gender.split(' / ')[1] || t.gender.split(' / ')[0]} | {lang === 'th' ? 'มือ' + t.hand.split(' / ')[0] : t.hand.split(' / ')[1] || t.hand.split(' / ')[0]}</p>
                 </div>
               </div>
               <div className="tester-actions">
@@ -839,14 +893,14 @@ function App() {
                     border: activeTesterId === t.id ? 'none' : '1px solid var(--border-color)'
                   }}
                 >
-                  {activeTesterId === t.id ? (lang === 'th' ? '✓ เลือกแล้ว' : '✓ Selected') : (lang === 'th' ? 'ยังไม่ได้เลือก' : 'Not Selected')}
+                  {activeTesterId === t.id ? t.repoSelected : t.repoNotSelected}
                 </button>
                 <div style={{ display: 'flex', gap: '1rem' }}>
                   <button className="btn-edit" onClick={() => alert('ฟังก์ชันแก้ไขกำลังอยู่ในระหว่างการพัฒนา')}>
-                    ✎ แก้ไข
+                    ✎ {t.btnEdit}
                   </button>
                   <button className="btn-delete" onClick={() => handleDeleteTester(t.id)}>
-                    🗑 ลบ
+                    🗑 {t.btnDelete}
                   </button>
                 </div>
               </div>
@@ -855,7 +909,7 @@ function App() {
         ) : (
           <div style={{ gridColumn: '1 / -1', padding: '3rem', textAlign: 'center', background: 'white', borderRadius: '8px', border: '1px dashed var(--border-color)' }}>
             <Users size={48} color="var(--text-muted)" style={{ margin: '0 auto 1rem' }} />
-            <p style={{ color: 'var(--text-secondary)' }}>ยังไม่มีข้อมูลผู้ทดสอบ คลิก 'เพิ่มทดสอบใหม่' เพื่อเริ่มต้น</p>
+            <p style={{ color: 'var(--text-secondary)' }}>{t.repoNoData}</p>
           </div>
         )}
       </div>
@@ -864,52 +918,52 @@ function App() {
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
-              <h3>เพิ่มผู้ทดสอบใหม่ (Add Tester)</h3>
+              <h3>{t.addTesterTitle}</h3>
               <button className="modal-close" onClick={() => setIsAddingTester(false)}>✕</button>
             </div>
             <form onSubmit={handleAddTester}>
               <div className="form-group">
-                <label>ชื่อ-นามสกุล (Name)</label>
+                <label>{t.addTesterName}</label>
                 <input type="text" className="form-control" value={testName} onChange={e => setTestName(e.target.value)} required />
               </div>
               
               <div className="form-row">
                 <div className="form-group">
-                  <label>อายุ (Age)</label>
+                  <label>{t.addTesterAge}</label>
                   <input type="number" min="1" className="form-control" value={testAge} onChange={e => setTestAge(e.target.value)} required />
                 </div>
                 <div className="form-group">
-                  <label>เพศ (Gender)</label>
+                  <label>{t.addTesterGender}</label>
                   <select className="form-control" value={testGender} onChange={e => setTestGender(e.target.value)} required>
-                    <option value="ชาย / Male">ชาย / Male</option>
-                    <option value="หญิง / Female">หญิง / Female</option>
-                    <option value="อื่นๆ / Other">อื่นๆ / Other</option>
+                    <option value="ชาย / Male">{lang === 'th' ? 'ชาย / Male' : 'Male / ชาย'}</option>
+                    <option value="หญิง / Female">{lang === 'th' ? 'หญิง / Female' : 'Female / หญิง'}</option>
+                    <option value="อื่นๆ / Other">{lang === 'th' ? 'อื่นๆ / Other' : 'Other / อื่นๆ'}</option>
                   </select>
                 </div>
               </div>
 
               <div className="form-row">
                 <div className="form-group">
-                  <label>น้ำหนัก (Weight) - kg</label>
+                  <label>{t.addTesterWeight}</label>
                   <input type="number" min="1" className="form-control" value={testWeight} onChange={e => setTestWeight(e.target.value)} required />
                 </div>
                 <div className="form-group">
-                  <label>ส่วนสูง (Height) - cm</label>
+                  <label>{t.addTesterHeight}</label>
                   <input type="number" min="1" className="form-control" value={testHeight} onChange={e => setTestHeight(e.target.value)} required />
                 </div>
               </div>
 
               <div className="form-group">
-                <label>ข้างที่ทดสอบ (Testing Hand)</label>
+                <label>{t.addTesterHand}</label>
                 <select className="form-control" value={testHand} onChange={e => setTestHand(e.target.value)} required>
-                  <option value="ขวา / Right">ขวา / Right</option>
-                  <option value="ซ้าย / Left">ซ้าย / Left</option>
+                  <option value="ขวา / Right">{lang === 'th' ? 'ขวา / Right' : 'Right / ขวา'}</option>
+                  <option value="ซ้าย / Left">{lang === 'th' ? 'ซ้าย / Left' : 'Left / ซ้าย'}</option>
                 </select>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' }}>
-                <button type="button" className="btn btn-outline" onClick={() => setIsAddingTester(false)}>ยกเลิก</button>
-                <button type="submit" className="btn btn-teal">บันทึก</button>
+                <button type="button" className="btn btn-outline" onClick={() => setIsAddingTester(false)}>{t.addTesterCancel}</button>
+                <button type="submit" className="btn btn-teal">{t.addTesterSave}</button>
               </div>
             </form>
           </div>
@@ -1022,7 +1076,7 @@ function App() {
         <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>{t.controlSub}</div>
         
         <div className="timer-select">
-          <span>{isCustomTime ? `${customMin}:${customSec.toString().padStart(2, '0')} นาที` : `${sessionTimePreset} นาที`}</span>
+          <span>{isCustomTime ? `${customMin}:${customSec.toString().padStart(2, '0')} ${t.unitMin}` : `${sessionTimePreset} ${t.unitMin}`}</span>
           <SettingsIcon size={16} color="var(--accent-teal)" />
         </div>
 
@@ -1141,15 +1195,15 @@ function App() {
             <div className="preset-pills">
               {[1, 3, 5, 10].map(m => (
                 <button key={m} className={`pill ${!isCustomTime && sessionTimePreset === m ? 'active' : ''}`} onClick={() => { setSessionTimePreset(m); setIsCustomTime(false); }}>
-                  {m} นาที
+                  {m} {t.unitMin}
                 </button>
               ))}
               <button className={`pill ${isCustomTime ? 'active' : ''}`} onClick={() => setIsCustomTime(true)}>{t.custom}</button>
             </div>
             {isCustomTime && (
               <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <input type="number" min="0" value={customMin} onChange={(e) => setCustomMin(parseInt(e.target.value) || 0)} style={{ width: '60px', padding: '0.25rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} /> นาที
-                <input type="number" min="0" max="59" value={customSec} onChange={(e) => setCustomSec(parseInt(e.target.value) || 0)} style={{ width: '60px', padding: '0.25rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} /> วินาที
+                <input type="number" min="0" value={customMin} onChange={(e) => setCustomMin(parseInt(e.target.value) || 0)} style={{ width: '60px', padding: '0.25rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} /> {t.unitMin}
+                <input type="number" min="0" max="59" value={customSec} onChange={(e) => setCustomSec(parseInt(e.target.value) || 0)} style={{ width: '60px', padding: '0.25rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} /> {t.unitSec}
               </div>
             )}
           </div>
@@ -1163,14 +1217,14 @@ function App() {
             <div className="preset-pills">
               {[10, 20, 30, 50].map(c => (
                 <button key={c} className={`pill ${!isCustomTarget && targetGrips === c ? 'active' : ''}`} onClick={() => { setTargetGrips(c); setIsCustomTarget(false); }}>
-                  {c} ครั้ง
+                  {c} {t.unitGrips}
                 </button>
               ))}
               <button className={`pill ${isCustomTarget ? 'active' : ''}`} onClick={() => setIsCustomTarget(true)}>{t.custom}</button>
             </div>
             {isCustomTarget && (
               <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <input type="number" min="1" value={customTargetInput} onChange={(e) => setCustomTargetInput(parseInt(e.target.value) || 1)} style={{ width: '80px', padding: '0.25rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} /> ครั้ง
+                <input type="number" min="1" value={customTargetInput} onChange={(e) => setCustomTargetInput(parseInt(e.target.value) || 1)} style={{ width: '80px', padding: '0.25rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} /> {t.unitGrips}
               </div>
             )}
           </div>
@@ -1336,12 +1390,12 @@ function App() {
         </div>
 
         <div className="sidebar-status">
-          <p className="status-label">ผู้ทดสอบที่กำลังทดสอบ (Active)</p>
-          <h4 className="status-value">{activeTester ? activeTester.name : "ยังไม่ได้เลือก (None)"}</h4>
+          <p className="status-label">{t.activeTesterTitle}</p>
+          <h4 className="status-value">{activeTester ? activeTester.name : t.activeTesterNone}</h4>
           
-          <p className="status-label">สถานะอุปกรณ์</p>
+          <p className="status-label">{t.deviceStatusTitle}</p>
           <h4 className={`status-value ${isConnected ? 'text-teal' : 'text-red'}`}>
-            {isConnected ? 'เชื่อมต่อแล้ว' : t.notConnected}
+            {isConnected ? (lang === 'th' ? 'เชื่อมต่อแล้ว' : 'Connected') : t.notConnected}
           </h4>
         </div>
 
