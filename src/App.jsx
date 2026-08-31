@@ -622,20 +622,18 @@ function App() {
           }
           const filteredMv = sessionRef.current.maBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.maBuffer.length;
 
-          // 4. Signal Envelope (Moving Average on Raw Absolute AC for accurate peak detection)
-          sessionRef.current.envelopeBuffer.push(Math.abs(acMv)); // Use raw AC directly
-          if (sessionRef.current.envelopeBuffer.length > 25) { // 25 samples = 50ms smoothing
+          // 4. Signal Envelope (Sliding window MAX of rawMv to perfectly match the graph peaks)
+          sessionRef.current.envelopeBuffer.push(rawMv); 
+          if (sessionRef.current.envelopeBuffer.length > 25) { // 25 samples = 50ms peak hold
             sessionRef.current.envelopeBuffer.shift();
           }
-          const envelopeMa = sessionRef.current.envelopeBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.envelopeBuffer.length;
-          
-          // Multiply by 1.57 (pi/2) to approximate peak amplitude of a wave from its average absolute value
-          const envelopePeak = envelopeMa * 1.57;
-          const current_voltage_mV = envelopePeak + filterRef.current.dcOffset;
+          const current_voltage_mV = Math.max(...sessionRef.current.envelopeBuffer);
           
           // Debug UI update
           if (debugTextRef.current) {
-            let stateName = sessionRef.current.isGripping ? "GRIPPING" : "IDLE";
+            let stateName = sessionRef.current.isActive 
+               ? (sessionRef.current.isGripping ? "GRIPPING" : "TRAINING") 
+               : "IDLE";
             
             debugTextRef.current.innerText = `State: ${stateName} | Env: ${current_voltage_mV.toFixed(0)}mV | Thr: ${sessionRef.current.startMv.toFixed(0)}mV`;
           }
@@ -658,7 +656,7 @@ function App() {
             const triggerThr = Number(sessionRef.current.startMv);
             const releaseThr = Number(sessionRef.current.stopMv);
             
-            console.log(`[EMG Check] Val: ${currentVal.toFixed(1)} | Thr: ${triggerThr} | Gripping: ${sessionRef.current.isGripping}`);
+            console.log(`[EMG Check] State: ${sessionRef.current.isGripping ? "GRIPPING" : "IDLE"} | Val: ${currentVal.toFixed(1)} | Thr: ${triggerThr} | isTraining: ${sessionRef.current.isActive}`);
 
             if (sessionRef.current.isGripping === false) {
               if (currentVal >= triggerThr) {
