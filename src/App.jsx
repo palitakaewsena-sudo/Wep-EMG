@@ -343,6 +343,8 @@ function App() {
     gripCount: 0,
     lastGripTime: 0,
     startTime: 0,
+    finishReason: '',
+    finishTime: 0,
     rawBuffer: [],
     envelopeBuffer: [],
     currentEnvelope: 0,
@@ -351,6 +353,7 @@ function App() {
     emaValue: 0,
   });
 
+  const [completionModal, setCompletionModal] = useState({ show: false, reason: '', grips: 0, time: 0 });
   const [forceFinish, setForceFinish] = useState(false);
   const settingsRef = useRef({ targetDuration: 0, targetGrips: 0 });
 
@@ -486,7 +489,15 @@ function App() {
   function finishSession() {
     setIsSessionActive(false);
     const targetSetTime = isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60;
-    const actualTime = targetSetTime - timeLeft;
+    
+    let actualTime;
+    let reason = 'manual';
+    if (sessionRef.current.finishTime > 0) {
+      actualTime = Math.round(sessionRef.current.finishTime);
+      reason = sessionRef.current.finishReason;
+    } else {
+      actualTime = targetSetTime - timeLeft;
+    }
     
     const newLog = {
       id: Date.now(),
@@ -505,6 +516,13 @@ function App() {
       }
       return updated;
     });
+
+    if (reason === 'grip' || reason === 'time') {
+      setCompletionModal({ show: true, reason, grips: sessionRef.current.gripCount, time: actualTime });
+    }
+    
+    sessionRef.current.finishTime = 0;
+    sessionRef.current.finishReason = '';
   }
 
   const handleConnect = async () => {
@@ -699,6 +717,8 @@ function App() {
             // Auto-stop conditions
             if (sessionRef.current.gripCount >= settingsRef.current.targetGrips || elapsedSeconds >= settingsRef.current.targetDuration) {
                sessionRef.current.isActive = false;
+               sessionRef.current.finishReason = sessionRef.current.gripCount >= settingsRef.current.targetGrips ? 'grip' : 'time';
+               sessionRef.current.finishTime = elapsedSeconds;
                setForceFinish(true);
             }
           }
@@ -1357,6 +1377,41 @@ function App() {
         {activeTab === 'settings' && renderSettings()}
         {activeTab === 'testers' && renderTesterRepository()}
       </main>
+      
+      {completionModal.show && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ textAlign: 'center', maxWidth: '400px' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎉</div>
+            <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: 'var(--text-primary)' }}>การฝึกเสร็จสิ้น!</h2>
+            
+            <p style={{ fontSize: '1.1rem', marginBottom: '1.5rem', color: 'var(--accent-teal)', fontWeight: 600 }}>
+              {completionModal.reason === 'grip' 
+                ? `ครบจำนวนการกำมือที่กำหนดแล้ว (${completionModal.grips} ครั้ง)`
+                : `ครบกำหนดเวลาการฝึกแล้ว (${formatTime(completionModal.time)} นาที)`}
+            </p>
+            
+            <div style={{ background: 'var(--bg-light)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', textAlign: 'left' }}>
+              <h4 style={{ marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>สรุปผลการฝึก:</h4>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span>จำนวนที่ทำได้:</span>
+                <strong>{completionModal.grips} ครั้ง</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>เวลาที่ใช้ไป:</span>
+                <strong>{formatTime(completionModal.time)} นาที</strong>
+              </div>
+            </div>
+            
+            <button 
+              className="btn btn-teal" 
+              style={{ width: '100%', padding: '0.75rem', fontSize: '1.1rem' }}
+              onClick={() => setCompletionModal({ show: false, reason: '', grips: 0, time: 0 })}
+            >
+              ตกลง
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
