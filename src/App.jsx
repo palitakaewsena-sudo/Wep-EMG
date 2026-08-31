@@ -342,6 +342,7 @@ function App() {
     isGripping: false,
     gripCount: 0,
     lastGripTime: 0,
+    startTime: 0,
     rawBuffer: [],
     envelopeBuffer: [],
     currentEnvelope: 0,
@@ -349,6 +350,22 @@ function App() {
     maBuffer: [],
     emaValue: 0,
   });
+
+  const [forceFinish, setForceFinish] = useState(false);
+  const settingsRef = useRef({ targetDuration: 0, targetGrips: 0 });
+
+  useEffect(() => {
+    settingsRef.current.targetDuration = isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60;
+    settingsRef.current.targetGrips = isCustomTarget ? customTargetInput : targetGrips;
+  }, [isCustomTime, customMin, customSec, sessionTimePreset, isCustomTarget, customTargetInput, targetGrips]);
+
+  useEffect(() => {
+    if (forceFinish) {
+      setForceFinish(false);
+      finishSession();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forceFinish]);
 
   useEffect(() => {
     sessionRef.current.isActive = isSessionActive;
@@ -445,9 +462,11 @@ function App() {
     sessionRef.current.releaseTime = 0;
     sessionRef.current.maBuffer = [];
     sessionRef.current.emaValue = 0;
+    sessionRef.current.startTime = Date.now();
+    setForceFinish(false);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
-    setEmgData(Array.from({ length: 300 }, (_, i) => ({ time: i, rawMv: 0 })));
+    setEmgData(Array.from({ length: 300 }, (_, i) => ({ time: "0.0s", rawMv: 0 })));
   };
 
   const handleStopSession = () => {
@@ -670,10 +689,18 @@ function App() {
               }
             }
 
+            const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
+
             newPoints.push({ 
-              time: timeRef.current++, 
+              time: elapsedSeconds.toFixed(1) + "s", 
               rawMv: rawMv
             });
+            
+            // Auto-stop conditions
+            if (sessionRef.current.gripCount >= settingsRef.current.targetGrips || elapsedSeconds >= settingsRef.current.targetDuration) {
+               sessionRef.current.isActive = false;
+               setForceFinish(true);
+            }
           }
         }
       }
