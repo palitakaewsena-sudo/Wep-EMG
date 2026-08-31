@@ -784,9 +784,13 @@ function App() {
         // Calculate Vmax, Vmin, Vp-p from up to 5 seconds window (2500 samples)
         if (sessionRef.current.rawBuffer.length > 0) {
           const bufferValues = sessionRef.current.rawBuffer;
-          const winMax = Math.max(...bufferValues);
+          const vmaxBuffer = bufferValues.slice(-1000); // 1-2 seconds window (1000 samples)
+          const sortedForMax = [...vmaxBuffer].sort((a, b) => a - b);
+          // Filter out top 5% noise spikes
+          const winMax = sortedForMax.length > 0 ? sortedForMax[Math.floor(sortedForMax.length * 0.95)] : 0;
+          
           const winMin = Math.min(...bufferValues);
-          const vpp = winMax - winMin;
+          const vpp = winMax > winMin ? winMax - winMin : 0;
           
           setCurrentVmax(winMax);
           setCurrentVmin(winMin);
