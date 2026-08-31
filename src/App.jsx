@@ -400,6 +400,7 @@ function App() {
     finishReason: '',
     finishTime: 0,
     rawBuffer: [],
+    peakHoldBuffer: [],
     envelopeBuffer: [],
     currentEnvelope: 0,
     releaseTime: 0,
@@ -514,6 +515,7 @@ function App() {
     sessionRef.current.isGripping = false;
     sessionRef.current.lastGripTime = 0;
     sessionRef.current.rawBuffer = [];
+    sessionRef.current.peakHoldBuffer = [];
     sessionRef.current.envelopeBuffer = [];
     sessionRef.current.currentEnvelope = 0;
     sessionRef.current.releaseTime = 0;
@@ -530,6 +532,7 @@ function App() {
     setIsSessionActive(false);
     setEmgData(Array.from({ length: 300 }, (_, i) => ({ time: i, rawMv: 0 })));
     setCurrentVpp(0);
+    sessionRef.current.peakHoldBuffer = [];
   };
 
   const handleResetSession = () => {
@@ -732,11 +735,17 @@ function App() {
             calibRef.current.rawBuffer.push(current_voltage_mV); // Calibrate using matching envelope voltage
           }
 
-          // Always push to sliding window for telemetry (300 samples = matching chart width) ONLY if active
+          // Always push to sliding window for telemetry ONLY if active
           if (sessionRef.current.isActive || calibRef.current.isActive) {
             sessionRef.current.rawBuffer.push(rawMv);
             if (sessionRef.current.rawBuffer.length > 300) {
               sessionRef.current.rawBuffer.shift();
+            }
+            
+            // Peak-Hold Buffer for Vmax/Vp-p (300 data points ~ 2-3 seconds)
+            sessionRef.current.peakHoldBuffer.push(rawMv);
+            if (sessionRef.current.peakHoldBuffer.length > 300) {
+              sessionRef.current.peakHoldBuffer.shift();
             }
           }
 
@@ -781,9 +790,9 @@ function App() {
       }
       
       if (sessionRef.current.isActive || calibRef.current.isActive) {
-        // Calculate Vmax, Vmin, Vp-p dynamically from real-time buffer
-        if (sessionRef.current.rawBuffer.length > 0) {
-          const buffermV = sessionRef.current.rawBuffer;
+        // Calculate Vmax, Vmin, Vp-p dynamically from real-time peak-hold buffer
+        if (sessionRef.current.peakHoldBuffer.length > 0) {
+          const buffermV = sessionRef.current.peakHoldBuffer;
           const Vmax = Math.max(...buffermV);
           const Vmin = Math.min(...buffermV);
           const Vpp = Vmax - Vmin;
