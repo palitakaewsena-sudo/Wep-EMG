@@ -732,10 +732,10 @@ function App() {
             calibRef.current.rawBuffer.push(current_voltage_mV); // Calibrate using matching envelope voltage
           }
 
-          // Always push to sliding window for telemetry (1500 samples = 3 seconds) ONLY if active
+          // Always push to sliding window for telemetry (2500 samples = 5 seconds) ONLY if active
           if (sessionRef.current.isActive || calibRef.current.isActive) {
             sessionRef.current.rawBuffer.push(rawMv);
-            if (sessionRef.current.rawBuffer.length > 1500) {
+            if (sessionRef.current.rawBuffer.length > 2500) {
               sessionRef.current.rawBuffer.shift();
             }
           }
@@ -781,7 +781,7 @@ function App() {
       }
       
       if (sessionRef.current.isActive || calibRef.current.isActive) {
-        // Calculate Vmax, Vmin, Vp-p from up to 3 seconds window (1500 samples)
+        // Calculate Vmax, Vmin, Vp-p from up to 5 seconds window (2500 samples)
         if (sessionRef.current.rawBuffer.length > 0) {
           const bufferValues = sessionRef.current.rawBuffer;
           const winMax = Math.max(...bufferValues);
@@ -814,13 +814,12 @@ function App() {
             }
             
             if (zcIndices.length > 1) {
-              // Calculate average period (T) in samples between first and last crossing
-              const totalSamples = zcIndices[zcIndices.length - 1] - zcIndices[0];
-              const numPeriods = zcIndices.length - 1;
-              const avgPeriodSamples = totalSamples / numPeriods;
+              // Calculate period (T) in samples between the LAST TWO crossings
+              const lastTwo = zcIndices.slice(-2);
+              const periodSamples = lastTwo[1] - lastTwo[0];
               
               // Assume 500 samples/sec (2ms per sample)
-              const T_seconds = avgPeriodSamples / 500.0;
+              const T_seconds = periodSamples / 500.0;
               newFreq = 1.0 / T_seconds;
             }
           }
