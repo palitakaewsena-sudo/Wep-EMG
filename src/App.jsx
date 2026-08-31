@@ -732,10 +732,10 @@ function App() {
             calibRef.current.rawBuffer.push(current_voltage_mV); // Calibrate using matching envelope voltage
           }
 
-          // Always push to sliding window for telemetry (500 samples) ONLY if active
+          // Always push to sliding window for telemetry (1500 samples = 3 seconds) ONLY if active
           if (sessionRef.current.isActive || calibRef.current.isActive) {
             sessionRef.current.rawBuffer.push(rawMv);
-            if (sessionRef.current.rawBuffer.length > 500) {
+            if (sessionRef.current.rawBuffer.length > 1500) {
               sessionRef.current.rawBuffer.shift();
             }
           }
@@ -781,7 +781,7 @@ function App() {
       }
       
       if (sessionRef.current.isActive || calibRef.current.isActive) {
-        // Calculate Vmax, Vmin, Vp-p, Freq from 500-sample window
+        // Calculate Vmax, Vmin, Vp-p from up to 3 seconds window (1500 samples)
         if (sessionRef.current.rawBuffer.length > 0) {
           const bufferValues = sessionRef.current.rawBuffer;
           const winMax = Math.max(...bufferValues);
@@ -793,31 +793,36 @@ function App() {
           setCurrentVpp(vpp);
           telemetryRef.current.vpp = vpp;
 
-          // Calculate Frequency from Period (T) of the signal
-          const meanVal = bufferValues.reduce((a, b) => a + b, 0) / bufferValues.length;
-          let zcIndices = [];
-          let isAbove = bufferValues[0] > meanVal;
-          const hysteresis = 50.0; // +/- 50 mV noise margin
-          
-          for (let i = 1; i < bufferValues.length; i++) {
-            if (!isAbove && bufferValues[i] > meanVal + hysteresis) {
-              isAbove = true;
-              zcIndices.push(i);
-            } else if (isAbove && bufferValues[i] < meanVal - hysteresis) {
-              isAbove = false;
-            }
-          }
-          
           let newFreq = 0.0;
-          if (zcIndices.length > 1) {
-            // Calculate average period (T) in samples between first and last crossing
-            const totalSamples = zcIndices[zcIndices.length - 1] - zcIndices[0];
-            const numPeriods = zcIndices.length - 1;
-            const avgPeriodSamples = totalSamples / numPeriods;
+
+          // Frequency calculated only if signal is large enough (Vp-p >= 50mV)
+          if (vpp >= 50.0) {
+            // Calculate Frequency from Period (T) of the signal using only the last 1 second (last 500 samples)
+            const freqBuffer = bufferValues.slice(-500);
+            const meanVal = freqBuffer.reduce((a, b) => a + b, 0) / freqBuffer.length;
+            let zcIndices = [];
+            let isAbove = freqBuffer[0] > meanVal;
+            const hysteresis = 50.0; // +/- 50 mV noise margin
             
-            // Assume 500 samples/sec (2ms per sample)
-            const T_seconds = avgPeriodSamples / 500.0;
-            newFreq = 1.0 / T_seconds;
+            for (let i = 1; i < freqBuffer.length; i++) {
+              if (!isAbove && freqBuffer[i] > meanVal + hysteresis) {
+                isAbove = true;
+                zcIndices.push(i);
+              } else if (isAbove && freqBuffer[i] < meanVal - hysteresis) {
+                isAbove = false;
+              }
+            }
+            
+            if (zcIndices.length > 1) {
+              // Calculate average period (T) in samples between first and last crossing
+              const totalSamples = zcIndices[zcIndices.length - 1] - zcIndices[0];
+              const numPeriods = zcIndices.length - 1;
+              const avgPeriodSamples = totalSamples / numPeriods;
+              
+              // Assume 500 samples/sec (2ms per sample)
+              const T_seconds = avgPeriodSamples / 500.0;
+              newFreq = 1.0 / T_seconds;
+            }
           }
           
           setCurrentFreq(newFreq);
