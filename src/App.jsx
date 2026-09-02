@@ -1113,22 +1113,22 @@ function App() {
       </div>
 
       {/* Controls */}
-      <div className="card control-card col-span-4">
-        <div className="control-header">
-          <Clock size={18} /> {t.controlTitle}
+      <div className="card control-card col-span-4" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', justifyContent: 'flex-start' }}>
+        <div>
+          <div className="control-header" style={{ marginBottom: '0.25rem' }}>
+            <Clock size={18} /> {t.controlTitle}
+          </div>
+          <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{t.controlSub}</div>
         </div>
-        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>{t.controlSub}</div>
         
         <div className="timer-select">
           <span>{isCustomTime ? `${customMin}:${customSec.toString().padStart(2, '0')} ${t.unitMin}` : `${sessionTimePreset} ${t.unitMin}`}</span>
           <SettingsIcon size={16} color="var(--accent-teal)" />
         </div>
 
-        <div ref={debugTextRef} style={{ marginTop: '1rem', padding: '0.5rem', background: '#1E293B', color: '#38BDF8', fontSize: '0.75rem', fontFamily: 'monospace', borderRadius: '4px', textAlign: 'center' }}>
-          State: IDLE | Env: 0mV | Thr: 0mV
-        </div>
+        <div ref={debugTextRef} style={{ display: 'none' }}></div>
 
-        <div className="action-grid" style={{ marginTop: '1rem' }}>
+        <div className="action-grid">
           <button className="action-btn" onClick={handleStartSession} style={{ color: isSessionActive ? 'var(--text-muted)' : 'var(--accent-teal)', borderColor: isSessionActive ? 'var(--border-color)' : 'var(--accent-teal)', background: isSessionActive ? 'var(--bg-main)' : 'rgba(0,188,163,0.05)' }}>
             <Play size={20} />
             {t.startBtn}
@@ -1144,7 +1144,7 @@ function App() {
         </div>
 
         {!isConnected && (
-          <div className="connect-prompt">
+          <div className="connect-prompt" style={{ marginTop: 'auto' }}>
             {t.connectPrompt}
           </div>
         )}
