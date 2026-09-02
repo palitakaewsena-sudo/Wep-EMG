@@ -712,10 +712,30 @@ function App() {
           const rawVal = parseFloat(line); // Assuming ADC 12-bit
           lastRaw = rawVal;
           
-          // 1. แปลงค่า ADC เป็นแรงดันไฟฟ้าดิบ (0 - 3300 mV) ตรงตามสเปก ESP32 ไม่แต่งค่า
+          // 1. แปลงค่า ADC เป็นแรงดันไฟฟ้าดิบ (0 - 3300 mV)
           const rawMv = (rawVal / 4095.0) * 3300.0;
 
-          // 2. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (แยกไว้เฉพาะการคำนวณเบื้องหลัง อิงจาก rawMv)
+          // 2. จำลอง AC Coupling แบบเครื่องมือวัดจริง (High-Pass Filter) เพื่อดึงคลื่นให้แกว่งติดลบได้อย่างเป็นธรรมชาติ
+          if (sessionRef.current.prevRawMv === undefined) {
+             sessionRef.current.prevRawMv = rawMv;
+             sessionRef.current.acMv = 0;
+             sessionRef.current.dcBaseline = rawMv;
+          }
+          
+          // DC Baseline (Low-Pass Filter) เพื่อหาจุดศูนย์กลางที่แท้จริง
+          sessionRef.current.dcBaseline = (sessionRef.current.dcBaseline * 0.99) + (rawMv * 0.01);
+          
+          // AC Component (High-Pass Filter) แบบเดียวกับโหมด AC ใน Oscilloscope
+          const alpha = 0.95; // ปรับความไวของการดึงคลื่นลง
+          sessionRef.current.acMv = alpha * (sessionRef.current.acMv + rawMv - sessionRef.current.prevRawMv);
+          sessionRef.current.prevRawMv = rawMv;
+          
+          let plotMv = sessionRef.current.acMv;
+          if (plotMv < 0) {
+              plotMv = plotMv * 1.5; // ขยายซีกลบเล็กน้อยเพื่อให้ชดเชยการที่ ESP32 ตัดสัญญาณไป
+          }
+
+          // 3. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (แยกไว้เฉพาะการคำนวณเบื้องหลัง อิงจาก rawMv)
           sessionRef.current.envelopeBuffer.push(rawMv); 
           if (sessionRef.current.envelopeBuffer.length > 25) { 
             sessionRef.current.envelopeBuffer.shift();
@@ -736,7 +756,7 @@ function App() {
           }
 
           // Peak-Hold Buffer (Always running to update UI in real-time)
-          sessionRef.current.peakHoldBuffer.push(rawMv);
+          sessionRef.current.peakHoldBuffer.push(plotMv);
           if (sessionRef.current.peakHoldBuffer.length > 1000) {
             sessionRef.current.peakHoldBuffer.shift();
           }
@@ -745,9 +765,8 @@ function App() {
             const now = Date.now();
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
 
-            // ส่งค่าแรงดันดิบเข้าวาดกราฟ (วาดเฉพาะตอนกดเริ่มฝึกเท่านั้น)
-            // คืนค่ากลับไปวาด rawMv ตรงๆ แบบไม่ผ่านการแปลงใดๆ (Raw 100%)
-            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: rawMv });
+            // ส่งค่าที่ผ่านวงจร AC Coupling จำลองเข้าไปวาดกราฟ
+            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: plotMv });
 
             // 2-State Machine for Grip Counting
             const triggerThr = Number(sessionRef.current.startMv);
@@ -797,7 +816,7 @@ function App() {
             setCurrentVmin(prev => (prev === 0 ? Vmin : (prev * 0.8) + (Vmin * 0.2)));
             setCurrentVpp(prev => (prev === 0 ? Vpp : (prev * 0.8) + (Vpp * 0.2)));
             telemetryRef.current.vpp = Vpp;
-            if (sessionRef.current.dcOffset) setDcOffsetState(sessionRef.current.dcOffset);
+            if (sessionRef.current.dcBaseline) setDcOffsetState(sessionRef.current.dcBaseline);
 
             let newFreq = 0.0;
 
@@ -1069,9 +1088,9 @@ function App() {
               
               <ReferenceLine y={0} stroke="var(--border-color)" strokeDasharray="3 3" />
               
-              <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+              <ReferenceLine y={startGripMv - dcOffsetState} stroke="var(--accent-teal)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.startAt} ${startGripMv.toFixed(0)} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+              <ReferenceLine y={stopGripMv - dcOffsetState} stroke="var(--accent-orange)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.stopAt} ${stopGripMv.toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
               <Line type="linear" dataKey="rawMv" stroke="#FACC15" strokeWidth={1} dot={false} isAnimationActive={false} />
