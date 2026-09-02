@@ -721,13 +721,9 @@ function App() {
           
           let acMv = rawMv - sessionRef.current.dcOffset;
           
-          // บังคับให้กราฟวาดสลับฟันปลา (บวก/ลบ) ทุกๆ จุดข้อมูล เพื่อให้กราฟหนาแน่นเป็นก้อนทึบเหมือน Oscilloscope
-          sessionRef.current.signToggle = !sessionRef.current.signToggle;
-          if (sessionRef.current.signToggle) {
-              acMv = -Math.abs(acMv) * 0.25; 
-          } else {
-              acMv = Math.abs(acMv);
-          }
+          // แยกค่าซีกบวกและซีกลบ (25% ของบวก) ของจุดข้อมูลนี้
+          let posMv = Math.abs(acMv);
+          let negMv = -posMv * 0.25;
 
           // 3. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (แยกไว้เฉพาะการคำนวณเบื้องหลัง อิงจาก rawMv)
           sessionRef.current.envelopeBuffer.push(rawMv); 
@@ -749,14 +745,11 @@ function App() {
             calibRef.current.rawBuffer.push(envelopeMv);
           }
 
-          // Peak-Hold and Raw Buffers (Always running to update UI in real-time)
-          sessionRef.current.rawBuffer.push(acMv);
-          if (sessionRef.current.rawBuffer.length > 1000) {
-            sessionRef.current.rawBuffer.shift();
-          }
-          
-          sessionRef.current.peakHoldBuffer.push(acMv);
-          if (sessionRef.current.peakHoldBuffer.length > 1000) {
+          // Peak-Hold Buffer (Always running to update UI in real-time)
+          sessionRef.current.peakHoldBuffer.push(posMv);
+          sessionRef.current.peakHoldBuffer.push(negMv);
+          if (sessionRef.current.peakHoldBuffer.length > 2000) {
+            sessionRef.current.peakHoldBuffer.shift();
             sessionRef.current.peakHoldBuffer.shift();
           }
 
@@ -765,10 +758,9 @@ function App() {
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
 
             // ส่งค่าแรงดันดิบเข้าวาดกราฟ (วาดเฉพาะตอนกดเริ่มฝึกเท่านั้น)
-            newPoints.push({ 
-              time: elapsedSeconds.toFixed(1) + "s", 
-              rawMv: acMv
-            });
+            // วาดจุดข้อมูล 2 จุดต่อ 1 sample เพื่อสร้างเส้นลากขึ้นลง (ก้อนทึบ) สมมาตรเป๊ะ 100% แบบ Oscilloscope โดยไม่เสียค่ายอดคลื่น
+            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: posMv });
+            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: negMv });
 
             // 2-State Machine for Grip Counting
             const triggerThr = Number(sessionRef.current.startMv);
@@ -859,7 +851,7 @@ function App() {
 
         if (sessionRef.current.isActive && newPoints.length > 0) {
           setEmgData(prevData => {
-            const combined = [...prevData, ...newPoints].slice(-1000); // 1000 points sliding window
+            const combined = [...prevData, ...newPoints].slice(-2000); // 2000 points sliding window (2 points/sample * 500Hz * 2s)
             return combined;
           });
         }
