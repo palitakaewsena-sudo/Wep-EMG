@@ -715,17 +715,7 @@ function App() {
           // 1. แปลงค่า ADC เป็นแรงดันไฟฟ้าดิบ (0 - 3300 mV) ตรงตามสเปก ESP32 ไม่แต่งค่า
           const rawMv = (rawVal / 4095.0) * 3300.0;
 
-          // 2. ลอจิกจำลอง AC Coupling และกู้คืนซีกลบที่หายไปให้หน้าตาเหมือน Oscilloscope
-          if (!sessionRef.current.dcOffset) sessionRef.current.dcOffset = rawMv;
-          sessionRef.current.dcOffset = (sessionRef.current.dcOffset * 0.99) + (rawMv * 0.01);
-          
-          let acMv = rawMv - sessionRef.current.dcOffset;
-          
-          // แยกค่าซีกบวกและซีกลบ (25% ของบวก) ของจุดข้อมูลนี้
-          let posMv = Math.abs(acMv);
-          let negMv = -posMv * 0.25;
-
-          // 3. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (แยกไว้เฉพาะการคำนวณเบื้องหลัง อิงจาก rawMv)
+          // 2. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (แยกไว้เฉพาะการคำนวณเบื้องหลัง อิงจาก rawMv)
           sessionRef.current.envelopeBuffer.push(rawMv); 
           if (sessionRef.current.envelopeBuffer.length > 25) { 
             sessionRef.current.envelopeBuffer.shift();
@@ -746,10 +736,8 @@ function App() {
           }
 
           // Peak-Hold Buffer (Always running to update UI in real-time)
-          sessionRef.current.peakHoldBuffer.push(posMv);
-          sessionRef.current.peakHoldBuffer.push(negMv);
-          if (sessionRef.current.peakHoldBuffer.length > 2000) {
-            sessionRef.current.peakHoldBuffer.shift();
+          sessionRef.current.peakHoldBuffer.push(rawMv);
+          if (sessionRef.current.peakHoldBuffer.length > 1000) {
             sessionRef.current.peakHoldBuffer.shift();
           }
 
@@ -758,9 +746,8 @@ function App() {
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
 
             // ส่งค่าแรงดันดิบเข้าวาดกราฟ (วาดเฉพาะตอนกดเริ่มฝึกเท่านั้น)
-            // วาดจุดข้อมูล 2 จุดต่อ 1 sample เพื่อสร้างเส้นลากขึ้นลง (ก้อนทึบ) สมมาตรเป๊ะ 100% แบบ Oscilloscope โดยไม่เสียค่ายอดคลื่น
-            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: posMv });
-            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: negMv });
+            // คืนค่ากลับไปวาด rawMv ตรงๆ แบบไม่ผ่านการแปลงใดๆ (Raw 100%)
+            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: rawMv });
 
             // 2-State Machine for Grip Counting
             const triggerThr = Number(sessionRef.current.startMv);
@@ -851,7 +838,7 @@ function App() {
 
         if (sessionRef.current.isActive && newPoints.length > 0) {
           setEmgData(prevData => {
-            const combined = [...prevData, ...newPoints].slice(-2000); // 2000 points sliding window (2 points/sample * 500Hz * 2s)
+            const combined = [...prevData, ...newPoints].slice(-1000); // 1000 points sliding window (500Hz * 2s)
             return combined;
           });
         }
@@ -1082,9 +1069,9 @@ function App() {
               
               <ReferenceLine y={0} stroke="var(--border-color)" strokeDasharray="3 3" />
               
-              <ReferenceLine y={startGripMv - dcOffsetState} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+              <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.startAt} ${startGripMv.toFixed(0)} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv - dcOffsetState} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+              <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.stopAt} ${stopGripMv.toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
               <Line type="linear" dataKey="rawMv" stroke="#FACC15" strokeWidth={1} dot={false} isAnimationActive={false} />
