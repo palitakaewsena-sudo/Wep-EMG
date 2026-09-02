@@ -367,7 +367,7 @@ function App() {
   const [calibTimeLeft, setCalibTimeLeft] = useState(0);
 
   // Data & Signal State
-  const [emgData, setEmgData] = useState(Array.from({ length: 1500 }, (_, i) => ({ time: i, rawMv: 1650 })));
+  const [emgData, setEmgData] = useState([]);
   const [currentVpp, setCurrentVpp] = useState(0);
   const [currentVmax, setCurrentVmax] = useState(0);
   const [currentVmin, setCurrentVmin] = useState(0);
@@ -542,12 +542,12 @@ function App() {
     setForceFinish(false);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
-    setEmgData(Array.from({ length: 1500 }, (_, i) => ({ time: i, rawMv: 1650 })));
+    setEmgData([]);
   };
 
   const handleStopSession = () => {
     setIsSessionActive(false);
-    setEmgData(Array.from({ length: 1500 }, (_, i) => ({ time: i, rawMv: 1650 })));
+    setEmgData([]);
     setCurrentVpp(0);
     sessionRef.current.peakHoldBuffer = [];
   };
@@ -556,7 +556,7 @@ function App() {
     setIsSessionActive(false);
     setGripCount(0);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
-    setEmgData(Array.from({ length: 1500 }, (_, i) => ({ time: i, rawMv: 1650 })));
+    setEmgData([]);
     setCurrentVpp(0);
   };
 
