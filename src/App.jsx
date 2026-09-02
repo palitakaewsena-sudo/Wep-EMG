@@ -1124,20 +1124,6 @@ function App() {
           <SettingsIcon size={16} color="var(--accent-teal)" />
         </div>
 
-        <div style={{ borderTop: '1px solid var(--border-light)', margin: '1rem 0' }}></div>
-        
-        <div style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>{t.calibTitle}</div>
-        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>{t.calibSub}</div>
-        
-        <button 
-          className="btn btn-purple" 
-          onClick={handleStartCalibration} 
-          disabled={isCalibrating || !isConnected}
-          style={{ width: '100%', display: 'flex', justifyContent: 'center', opacity: (!isConnected || isCalibrating) ? 0.6 : 1 }}
-        >
-          <Target size={16} /> {isCalibrating ? `Calibrating... (${calibTimeLeft}s)` : t.calibBtn}
-        </button>
-
         <div ref={debugTextRef} style={{ marginTop: '1rem', padding: '0.5rem', background: '#1E293B', color: '#38BDF8', fontSize: '0.75rem', fontFamily: 'monospace', borderRadius: '4px', textAlign: 'center' }}>
           State: IDLE | Env: 0mV | Thr: 0mV
         </div>
