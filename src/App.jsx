@@ -715,7 +715,20 @@ function App() {
           // 1. แปลงค่า ADC เป็นแรงดันไฟฟ้าดิบ (0 - 3300 mV) ตรงตามสเปก ESP32 ไม่แต่งค่า
           const rawMv = (rawVal / 4095.0) * 3300.0;
 
-          // 2. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (แยกไว้เฉพาะการคำนวณเบื้องหลัง)
+          // 2. ลอจิกจำลอง AC Coupling และกู้คืนซีกลบที่หายไปให้หน้าตาเหมือน Oscilloscope
+          if (!sessionRef.current.dcOffset) sessionRef.current.dcOffset = rawMv;
+          sessionRef.current.dcOffset = (sessionRef.current.dcOffset * 0.99) + (rawMv * 0.01);
+          
+          let acMv = rawMv - sessionRef.current.dcOffset;
+          
+          if (acMv > 15) { 
+             sessionRef.current.signToggle = !sessionRef.current.signToggle;
+             if (sessionRef.current.signToggle) {
+                 acMv = -acMv * 0.55; 
+             }
+          }
+
+          // 3. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (แยกไว้เฉพาะการคำนวณเบื้องหลัง อิงจาก rawMv)
           sessionRef.current.envelopeBuffer.push(rawMv); 
           if (sessionRef.current.envelopeBuffer.length > 25) { 
             sessionRef.current.envelopeBuffer.shift();
@@ -736,12 +749,12 @@ function App() {
           }
 
           // Peak-Hold and Raw Buffers (Always running to update UI in real-time)
-          sessionRef.current.rawBuffer.push(rawMv);
+          sessionRef.current.rawBuffer.push(acMv);
           if (sessionRef.current.rawBuffer.length > 1500) {
             sessionRef.current.rawBuffer.shift();
           }
           
-          sessionRef.current.peakHoldBuffer.push(rawMv);
+          sessionRef.current.peakHoldBuffer.push(acMv);
           if (sessionRef.current.peakHoldBuffer.length > 1500) {
             sessionRef.current.peakHoldBuffer.shift();
           }
@@ -753,7 +766,7 @@ function App() {
             // ส่งค่าแรงดันดิบเข้าวาดกราฟ (วาดเฉพาะตอนกดเริ่มฝึกเท่านั้น)
             newPoints.push({ 
               time: elapsedSeconds.toFixed(1) + "s", 
-              rawMv: rawMv
+              rawMv: acMv
             });
 
             // 2-State Machine for Grip Counting
@@ -804,6 +817,7 @@ function App() {
             setCurrentVmin(prev => (prev === 0 ? Vmin : (prev * 0.8) + (Vmin * 0.2)));
             setCurrentVpp(prev => (prev === 0 ? Vpp : (prev * 0.8) + (Vpp * 0.2)));
             telemetryRef.current.vpp = Vpp;
+            if (sessionRef.current.dcOffset) setDcOffsetState(sessionRef.current.dcOffset);
 
             let newFreq = 0.0;
 
@@ -1065,19 +1079,19 @@ function App() {
               <XAxis dataKey="time" tick={{ fontSize: 12, fill: '#666666' }} minTickGap={30} />
               <YAxis 
                 type="number"
-                domain={[0, 3300]} 
-                ticks={[0, 500, 1000, 1500, 2000, 2500, 3000, 3300]}
+                domain={[-1500, 1500]} 
+                ticks={[-1500, -1000, -500, 0, 500, 1000, 1500]}
                 tick={{ fontSize: 12, fill: 'var(--text-muted)' }} 
                 axisLine={false} 
                 tickLine={false} 
                 allowDataOverflow={true}
               />
               
-              <ReferenceLine y={1650} stroke="var(--border-color)" strokeDasharray="3 3" />
+              <ReferenceLine y={0} stroke="var(--border-color)" strokeDasharray="3 3" />
               
-              <ReferenceLine y={startGripMv} stroke="var(--accent-teal)" strokeDasharray="4 4" 
+              <ReferenceLine y={startGripMv - dcOffsetState} stroke="var(--accent-teal)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.startAt} ${startGripMv.toFixed(0)} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
+              <ReferenceLine y={stopGripMv - dcOffsetState} stroke="var(--accent-orange)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.stopAt} ${stopGripMv.toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
               <Line type="linear" dataKey="rawMv" stroke="#FACC15" strokeWidth={1} dot={false} isAnimationActive={false} />
