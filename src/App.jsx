@@ -367,7 +367,7 @@ function App() {
   const [calibTimeLeft, setCalibTimeLeft] = useState(0);
 
   // Data & Signal State
-  const [emgData, setEmgData] = useState(Array.from({ length: 300 }, (_, i) => ({ time: "0.0s", rawMv: 0 })));
+  const [emgData, setEmgData] = useState(Array.from({ length: 1500 }, (_, i) => ({ time: "0.0s", rawMv: 0 })));
   const [currentVpp, setCurrentVpp] = useState(0);
   const [currentVmax, setCurrentVmax] = useState(0);
   const [currentVmin, setCurrentVmin] = useState(0);
@@ -542,12 +542,12 @@ function App() {
     setForceFinish(false);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
-    setEmgData(Array.from({ length: 300 }, (_, i) => ({ time: "0.0s", rawMv: 0 })));
+    setEmgData(Array.from({ length: 1500 }, (_, i) => ({ time: "0.0s", rawMv: 0 })));
   };
 
   const handleStopSession = () => {
     setIsSessionActive(false);
-    setEmgData(Array.from({ length: 300 }, (_, i) => ({ time: i, rawMv: 0 })));
+    setEmgData(Array.from({ length: 1500 }, (_, i) => ({ time: i, rawMv: 0 })));
     setCurrentVpp(0);
     sessionRef.current.peakHoldBuffer = [];
   };
@@ -556,7 +556,7 @@ function App() {
     setIsSessionActive(false);
     setGripCount(0);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
-    setEmgData(Array.from({ length: 150 }, (_, i) => ({ time: i, value: 0, raw: 0 })));
+    setEmgData(Array.from({ length: 1500 }, (_, i) => ({ time: "0.0s", rawMv: 0 })));
     setCurrentVpp(0);
   };
 
@@ -712,36 +712,15 @@ function App() {
           const rawVal = parseFloat(line); // Assuming ADC 12-bit
           lastRaw = rawVal;
           
-          // 1. แปลงค่าแรงดันดิบพร้อมชดเชยความเพี้ยน ADC ของ ESP32 (ESP32 ADC Non-linearity Compensation)
-          let rawMv = ((rawVal / 4095.0) * 3300.0 * 1.28) + 20.0;
+          // 1. แปลงค่า ADC เป็นแรงดันไฟฟ้าดิบ (0 - 3300 mV) ตรงตามสเปก ESP32 ไม่แต่งค่า
+          const rawMv = (rawVal / 4095.0) * 3300.0;
 
-          // 2. High-pass filter (DC Offset tracking)
-          if (!filterRef.current.initialized) {
-            filterRef.current.dcOffset = rawMv;
-            filterRef.current.initialized = true;
-          }
-          
-          // อัปเดต baseline เฉพาะตอนไม่ได้กำมือ (ป้องกัน baseline เลื่อนตามแรงกำ)
-          if (sessionRef.current.isGripping === false) {
-            filterRef.current.dcOffset = (filterRef.current.dcOffset * 0.999) + (rawMv * 0.001);
-          }
-          
-          const acMv = rawMv - filterRef.current.dcOffset;
-
-          // 3. Notch Filter (Moving Average 10 samples for 50Hz/60Hz noise)
-          // NOTE: Only used for Freq/ZCR/telemetry. NOT used for peak detection because it suppresses 50Hz.
-          sessionRef.current.maBuffer.push(acMv);
-          if (sessionRef.current.maBuffer.length > 10) {
-            sessionRef.current.maBuffer.shift();
-          }
-          const filteredMv = sessionRef.current.maBuffer.reduce((a, b) => a + b, 0) / sessionRef.current.maBuffer.length;
-
-          // 4. Signal Envelope (Sliding window MAX of rawMv to perfectly match the graph peaks)
+          // 2. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (แยกไว้เฉพาะการคำนวณเบื้องหลัง)
           sessionRef.current.envelopeBuffer.push(rawMv); 
-          if (sessionRef.current.envelopeBuffer.length > 25) { // 25 samples = 50ms peak hold
+          if (sessionRef.current.envelopeBuffer.length > 25) { 
             sessionRef.current.envelopeBuffer.shift();
           }
-          const current_voltage_mV = Math.max(...sessionRef.current.envelopeBuffer);
+          const envelopeMv = Math.max(...sessionRef.current.envelopeBuffer);
           
           // Debug UI update
           if (debugTextRef.current) {
@@ -749,55 +728,49 @@ function App() {
                ? (sessionRef.current.isGripping ? "GRIPPING" : "TRAINING") 
                : "IDLE";
             
-            debugTextRef.current.innerText = `State: ${stateName} | Env: ${current_voltage_mV.toFixed(0)}mV | Thr: ${sessionRef.current.startMv.toFixed(0)}mV`;
+            debugTextRef.current.innerText = `State: ${stateName} | Env: ${envelopeMv.toFixed(0)}mV | Thr: ${sessionRef.current.startMv.toFixed(0)}mV`;
           }
           
           if (calibRef.current.isActive) {
-            calibRef.current.rawBuffer.push(current_voltage_mV); // Calibrate using matching envelope voltage
+            calibRef.current.rawBuffer.push(envelopeMv);
           }
 
-          // Always push to sliding window for telemetry ONLY if active
-          if (sessionRef.current.isActive || calibRef.current.isActive) {
-            sessionRef.current.rawBuffer.push(rawMv);
-            if (sessionRef.current.rawBuffer.length > 300) {
-              sessionRef.current.rawBuffer.shift();
-            }
-            
-            // Peak-Hold Buffer for Vmax/Vp-p (300 data points ~ 2-3 seconds)
-            sessionRef.current.peakHoldBuffer.push(rawMv);
-            if (sessionRef.current.peakHoldBuffer.length > 300) {
-              sessionRef.current.peakHoldBuffer.shift();
-            }
+          // Peak-Hold and Raw Buffers (Always running to update UI in real-time)
+          sessionRef.current.rawBuffer.push(rawMv);
+          if (sessionRef.current.rawBuffer.length > 1500) {
+            sessionRef.current.rawBuffer.shift();
+          }
+          
+          sessionRef.current.peakHoldBuffer.push(rawMv);
+          if (sessionRef.current.peakHoldBuffer.length > 1500) {
+            sessionRef.current.peakHoldBuffer.shift();
           }
 
           if (sessionRef.current.isActive) {
             const now = Date.now();
-            
-            // 2-State Machine for Grip Counting (Rising Edge Detection with Hysteresis)
-            const currentVal = Number(current_voltage_mV);
-            const triggerThr = Number(sessionRef.current.startMv);
-            const releaseThr = Number(sessionRef.current.stopMv);
-            
-            console.log(`[EMG Check] State: ${sessionRef.current.isGripping ? "GRIPPING" : "IDLE"} | Val: ${currentVal.toFixed(1)} | Thr: ${triggerThr} | isTraining: ${sessionRef.current.isActive}`);
-
-            if (sessionRef.current.isGripping === false) {
-              if (currentVal >= triggerThr) {
-                sessionRef.current.isGripping = true;
-                sessionRef.current.gripCount++;
-                setGripCount(prev => prev + 1); // บังคับใช้อัปเดตแบบ Functional State ป้องกัน Stale Closure
-              }
-            } else {
-              if (currentVal < releaseThr) {
-                sessionRef.current.isGripping = false;
-              }
-            }
-
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
 
+            // ส่งค่าแรงดันดิบเข้าวาดกราฟ (วาดเฉพาะตอนกดเริ่มฝึกเท่านั้น)
             newPoints.push({ 
               time: elapsedSeconds.toFixed(1) + "s", 
               rawMv: rawMv
             });
+
+            // 2-State Machine for Grip Counting
+            const triggerThr = Number(sessionRef.current.startMv);
+            const releaseThr = Number(sessionRef.current.stopMv);
+
+            if (sessionRef.current.isGripping === false) {
+              if (envelopeMv >= triggerThr) {
+                sessionRef.current.isGripping = true;
+                sessionRef.current.gripCount++;
+                setGripCount(prev => prev + 1);
+              }
+            } else {
+              if (envelopeMv < releaseThr) {
+                sessionRef.current.isGripping = false;
+              }
+            }
             
             // Auto-stop conditions
             const reachedGrips = settingsRef.current.targetGrips > 0 && sessionRef.current.gripCount >= settingsRef.current.targetGrips;
@@ -871,7 +844,7 @@ function App() {
 
         if (sessionRef.current.isActive && newPoints.length > 0) {
           setEmgData(prevData => {
-            const combined = [...prevData, ...newPoints].slice(-300); // 300 points sliding window
+            const combined = [...prevData, ...newPoints].slice(-1500); // 1500 points sliding window
             return combined;
           });
         }
@@ -1090,7 +1063,15 @@ function App() {
             <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
               <XAxis dataKey="time" tick={{ fontSize: 12, fill: '#666666' }} minTickGap={30} />
-              <YAxis domain={[0, 3300]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis 
+                type="number"
+                domain={[0, 3300]} 
+                ticks={[0, 500, 1000, 1500, 2000, 2500, 3000, 3300]}
+                tick={{ fontSize: 12, fill: 'var(--text-muted)' }} 
+                axisLine={false} 
+                tickLine={false} 
+                allowDataOverflow={true}
+              />
               
               <ReferenceLine y={1650} stroke="var(--border-color)" strokeDasharray="3 3" />
               
@@ -1099,7 +1080,7 @@ function App() {
               <ReferenceLine y={stopGripMv} stroke="var(--accent-orange)" strokeDasharray="4 4" 
                 label={{ position: 'right', value: `${t.stopAt} ${stopGripMv.toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
                 
-              <Line type="linear" dataKey="rawMv" stroke="var(--accent-teal)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              <Line type="linear" dataKey="rawMv" stroke="#FACC15" strokeWidth={1} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
