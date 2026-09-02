@@ -724,7 +724,7 @@ function App() {
           if (acMv > 15) { 
              sessionRef.current.signToggle = !sessionRef.current.signToggle;
              if (sessionRef.current.signToggle) {
-                 acMv = -acMv * 0.55; 
+                 acMv = -acMv * 0.30; 
              }
           }
 
@@ -750,12 +750,12 @@ function App() {
 
           // Peak-Hold and Raw Buffers (Always running to update UI in real-time)
           sessionRef.current.rawBuffer.push(acMv);
-          if (sessionRef.current.rawBuffer.length > 1500) {
+          if (sessionRef.current.rawBuffer.length > 1000) {
             sessionRef.current.rawBuffer.shift();
           }
           
           sessionRef.current.peakHoldBuffer.push(acMv);
-          if (sessionRef.current.peakHoldBuffer.length > 1500) {
+          if (sessionRef.current.peakHoldBuffer.length > 1000) {
             sessionRef.current.peakHoldBuffer.shift();
           }
 
@@ -858,7 +858,7 @@ function App() {
 
         if (sessionRef.current.isActive && newPoints.length > 0) {
           setEmgData(prevData => {
-            const combined = [...prevData, ...newPoints].slice(-1500); // 1500 points sliding window
+            const combined = [...prevData, ...newPoints].slice(-1000); // 1000 points sliding window
             return combined;
           });
         }
@@ -1079,8 +1079,8 @@ function App() {
               <XAxis dataKey="time" tick={{ fontSize: 12, fill: '#666666' }} minTickGap={30} />
               <YAxis 
                 type="number"
-                domain={[-1500, 1500]} 
-                ticks={[-1500, -1000, -500, 0, 500, 1000, 1500]}
+                domain={[-4000, 4000]} 
+                ticks={[-4000, -3000, -2000, -1000, 0, 1000, 2000, 3000, 4000]}
                 tick={{ fontSize: 12, fill: 'var(--text-muted)' }} 
                 axisLine={false} 
                 tickLine={false} 
