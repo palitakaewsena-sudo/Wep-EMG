@@ -715,25 +715,21 @@ function App() {
           // 1. แปลงค่า ADC เป็นแรงดันไฟฟ้าดิบ (0 - 3300 mV)
           const rawMv = (rawVal / 4095.0) * 3300.0;
 
-          // 2. จำลอง AC Coupling แบบเครื่องมือวัดจริง (High-Pass Filter) เพื่อดึงคลื่นให้แกว่งติดลบได้อย่างเป็นธรรมชาติ
-          if (sessionRef.current.prevRawMv === undefined) {
-             sessionRef.current.prevRawMv = rawMv;
-             sessionRef.current.acMv = 0;
+          // 2. หาค่า DC Baseline ศูนย์กลางเพื่อวาดซีกลบให้สมบูรณ์ (อัปเดตเฉพาะตอนไม่ได้กำมือ เพื่อไม่ให้ไปตัดทอนยอดคลื่น)
+          if (sessionRef.current.dcBaseline === undefined) {
              sessionRef.current.dcBaseline = rawMv;
           }
-          
-          // DC Baseline (Low-Pass Filter) เพื่อหาจุดศูนย์กลางที่แท้จริง
-          sessionRef.current.dcBaseline = (sessionRef.current.dcBaseline * 0.99) + (rawMv * 0.01);
-          
-          // AC Component (High-Pass Filter) แบบเดียวกับโหมด AC ใน Oscilloscope
-          const alpha = 0.95; // ปรับความไวของการดึงคลื่นลง
-          sessionRef.current.acMv = alpha * (sessionRef.current.acMv + rawMv - sessionRef.current.prevRawMv);
-          sessionRef.current.prevRawMv = rawMv;
-          
-          let plotMv = sessionRef.current.acMv;
-          if (plotMv < 0) {
-              plotMv = plotMv * 1.5; // ขยายซีกลบเล็กน้อยเพื่อให้ชดเชยการที่ ESP32 ตัดสัญญาณไป
+          // ถ้ายอดคลื่นต่ำกว่า Baseline + 100mV แปลว่ากำลังอยู่ในสถานะ Idle หรือมีสัญญาณรบกวนนิดหน่อย ให้อัปเดต Baseline ช้าๆ
+          if (rawMv < sessionRef.current.dcBaseline + 100) {
+             sessionRef.current.dcBaseline = (sessionRef.current.dcBaseline * 0.95) + (rawMv * 0.05);
           }
+          
+          // คำนวณค่าแกว่ง (ลบ Baseline ออกเพื่อให้ศูนย์กลางอยู่ที่ 0V)
+          let val = rawMv - sessionRef.current.dcBaseline;
+          
+          // สร้างซีกบวกและซีกลบให้สมมาตรเป๊ะเหมือนบนจอ Oscilloscope โดยไม่สูญเสียความสูงของยอดคลื่น
+          let posMv = Math.abs(val);
+          let negMv = -posMv * 0.25; // สัดส่วน 25% (ประมาณ -820mV เทียบกับ 3.5V ในรูป)
 
           // 3. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (แยกไว้เฉพาะการคำนวณเบื้องหลัง อิงจาก rawMv)
           sessionRef.current.envelopeBuffer.push(rawMv); 
@@ -756,8 +752,10 @@ function App() {
           }
 
           // Peak-Hold Buffer (Always running to update UI in real-time)
-          sessionRef.current.peakHoldBuffer.push(plotMv);
-          if (sessionRef.current.peakHoldBuffer.length > 1000) {
+          sessionRef.current.peakHoldBuffer.push(posMv);
+          sessionRef.current.peakHoldBuffer.push(negMv);
+          if (sessionRef.current.peakHoldBuffer.length > 2000) {
+            sessionRef.current.peakHoldBuffer.shift();
             sessionRef.current.peakHoldBuffer.shift();
           }
 
@@ -765,8 +763,9 @@ function App() {
             const now = Date.now();
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
 
-            // ส่งค่าที่ผ่านวงจร AC Coupling จำลองเข้าไปวาดกราฟ
-            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: plotMv });
+            // วาด 2 จุดต่อ 1 sample เพื่อสร้างเส้นลากขึ้นลงแนวดิ่ง (ก้อนทึบ) สมมาตรเป๊ะ ไม่มีย้วย ไม่มีย้อย
+            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: posMv });
+            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: negMv });
 
             // 2-State Machine for Grip Counting
             const triggerThr = Number(sessionRef.current.startMv);
@@ -857,7 +856,7 @@ function App() {
 
         if (sessionRef.current.isActive && newPoints.length > 0) {
           setEmgData(prevData => {
-            const combined = [...prevData, ...newPoints].slice(-1000); // 1000 points sliding window (500Hz * 2s)
+            const combined = [...prevData, ...newPoints].slice(-2000); // 2000 points sliding window (2 points/sample * 500Hz * 2s)
             return combined;
           });
         }
