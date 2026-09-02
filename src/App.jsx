@@ -1042,22 +1042,17 @@ function App() {
   const renderDashboard = () => (
     <div className="dashboard-grid">
       {/* Metrics Row */}
-      <div className="card metric-card col-span-3">
+      <div className="card metric-card col-span-4">
         <div className="metric-header"><Zap size={16} /> {t.emgVal}</div>
         <div className="metric-value teal">{currentVpp.toFixed(1)}</div>
         <div className="metric-sub">{t.emgSub.replace('0', rawAdc.toFixed(0))}</div>
       </div>
-      <div className="card metric-card col-span-3">
+      <div className="card metric-card col-span-4">
         <div className="metric-header"><Hand size={16} /> {t.gripVal}</div>
         <div className="metric-value teal">{gripCount}</div>
         <div className="metric-sub">{t.gripSub}</div>
       </div>
-      <div className="card metric-card col-span-3">
-        <div className="metric-header"><Clock size={16} /> {t.timeVal}</div>
-        <div className="metric-value">{formatTime(timeLeft)}</div>
-        <div className="metric-sub">{t.timeSub}</div>
-      </div>
-      <div className="card metric-card col-span-3">
+      <div className="card metric-card col-span-4">
         <div className="metric-header"><BarChart2 size={16} /> {t.statusVal}</div>
         <div className="metric-value" style={{ fontSize: '1.5rem', display: 'flex', alignItems: 'center', height: '100%' }}>
           {isSessionActive ? t.statusTraining : (isConnected ? t.statusReady : t.statusWait)}
@@ -1124,6 +1119,15 @@ function App() {
         <div className="timer-select">
           <span>{isCustomTime ? `${customMin}:${customSec.toString().padStart(2, '0')} ${t.unitMin}` : `${sessionTimePreset} ${t.unitMin}`}</span>
           <SettingsIcon size={16} color="var(--accent-teal)" />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--bg-main)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+          <div style={{ fontSize: '3rem', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', lineHeight: 1 }}>
+            {formatTime(timeLeft)}
+          </div>
+          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem', fontWeight: 500, letterSpacing: '1px' }}>
+            {t.timeSub}
+          </div>
         </div>
 
         <div ref={debugTextRef} style={{ display: 'none' }}></div>
