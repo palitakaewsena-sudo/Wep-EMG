@@ -448,7 +448,8 @@ function App() {
   }, [sessionTimePreset, isCustomTime, customMin, customSec]);
 
   useEffect(() => {
-    if (isSessionActive && gripCount >= (isCustomTarget ? customTargetInput : targetGrips)) {
+    const tg = isCustomTarget ? customTargetInput : targetGrips;
+    if (isSessionActive && tg > 0 && gripCount >= tg) {
       finishSession();
     }
   }, [gripCount, isSessionActive, targetGrips, isCustomTarget, customTargetInput]);
@@ -458,12 +459,20 @@ function App() {
 
   useEffect(() => {
     let interval;
-    if (isSessionActive && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft(prev => prev - 1);
-      }, 1000);
-    } else if (isSessionActive && timeLeft === 0) {
-      finishSession();
+    if (isSessionActive) {
+      if (settingsRef.current.targetDuration === 0) {
+        interval = setInterval(() => {
+          setTimeLeft(prev => prev + 1);
+        }, 1000);
+      } else {
+        if (timeLeft > 0) {
+          interval = setInterval(() => {
+            setTimeLeft(prev => prev - 1);
+          }, 1000);
+        } else if (timeLeft === 0) {
+          finishSession();
+        }
+      }
     }
     return () => clearInterval(interval);
   }, [isSessionActive, timeLeft]);
@@ -561,13 +570,17 @@ function App() {
       actualTime = Math.round(sessionRef.current.finishTime);
       reason = sessionRef.current.finishReason;
     } else {
-      actualTime = targetSetTime - timeLeft;
+      if (targetSetTime === 0) {
+         actualTime = timeLeft;
+      } else {
+         actualTime = targetSetTime - timeLeft;
+      }
     }
     
     const newLog = {
       id: Date.now(),
       date: new Date().toLocaleString(lang === 'th' ? 'th-TH' : 'en-US'),
-      setTime: formatTime(targetSetTime),
+      setTime: targetSetTime === 0 ? (lang === 'th' ? 'ไม่จำกัด' : 'Unlimited') : formatTime(targetSetTime),
       realTime: formatTime(actualTime),
       grips: sessionRef.current.gripCount,
       emg: currentVpp.toFixed(1),
@@ -787,9 +800,12 @@ function App() {
             });
             
             // Auto-stop conditions
-            if (sessionRef.current.gripCount >= settingsRef.current.targetGrips || elapsedSeconds >= settingsRef.current.targetDuration) {
+            const reachedGrips = settingsRef.current.targetGrips > 0 && sessionRef.current.gripCount >= settingsRef.current.targetGrips;
+            const reachedTime = settingsRef.current.targetDuration > 0 && elapsedSeconds >= settingsRef.current.targetDuration;
+            
+            if (reachedGrips || reachedTime) {
                sessionRef.current.isActive = false;
-               sessionRef.current.finishReason = sessionRef.current.gripCount >= settingsRef.current.targetGrips ? 'grip' : 'time';
+               sessionRef.current.finishReason = reachedGrips ? 'grip' : 'time';
                sessionRef.current.finishTime = elapsedSeconds;
                setForceFinish(true);
             }
@@ -1117,7 +1133,7 @@ function App() {
         </div>
         
         <div className="timer-select">
-          <span>{isCustomTime ? `${customMin}:${customSec.toString().padStart(2, '0')} ${t.unitMin}` : `${sessionTimePreset} ${t.unitMin}`}</span>
+          <span>{isCustomTime ? `${customMin}:${customSec.toString().padStart(2, '0')} ${t.unitMin}` : (sessionTimePreset === 0 ? (lang === 'th' ? 'ไม่จำกัด' : 'Unlimited') : `${sessionTimePreset} ${t.unitMin}`)}</span>
           <SettingsIcon size={16} color="var(--accent-teal)" />
         </div>
 
@@ -1227,6 +1243,9 @@ function App() {
             <h3 style={{ fontSize: '1rem' }}>{t.setTimeTitle}</h3>
             <p className="subtitle">{t.setTimeSub}</p>
             <div className="preset-pills">
+              <button className={`pill ${!isCustomTime && sessionTimePreset === 0 ? 'active' : ''}`} onClick={() => { setSessionTimePreset(0); setIsCustomTime(false); }}>
+                {lang === 'th' ? 'ไม่จำกัด' : 'Unlimited'}
+              </button>
               {[1, 3, 5, 10].map(m => (
                 <button key={m} className={`pill ${!isCustomTime && sessionTimePreset === m ? 'active' : ''}`} onClick={() => { setSessionTimePreset(m); setIsCustomTime(false); }}>
                   {m} {t.unitMin}
@@ -1249,6 +1268,9 @@ function App() {
             <h3 style={{ fontSize: '1rem' }}>{t.setTargetTitle}</h3>
             <p className="subtitle">{t.setTargetSub}</p>
             <div className="preset-pills">
+              <button className={`pill ${!isCustomTarget && targetGrips === 0 ? 'active' : ''}`} onClick={() => { setTargetGrips(0); setIsCustomTarget(false); }}>
+                {lang === 'th' ? 'ไม่จำกัด' : 'Unlimited'}
+              </button>
               {[10, 20, 30, 50].map(c => (
                 <button key={c} className={`pill ${!isCustomTarget && targetGrips === c ? 'active' : ''}`} onClick={() => { setTargetGrips(c); setIsCustomTarget(false); }}>
                   {c} {t.unitGrips}
