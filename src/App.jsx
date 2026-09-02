@@ -721,11 +721,12 @@ function App() {
           
           let acMv = rawMv - sessionRef.current.dcOffset;
           
-          if (acMv > 15) { 
-             sessionRef.current.signToggle = !sessionRef.current.signToggle;
-             if (sessionRef.current.signToggle) {
-                 acMv = -acMv * 0.30; 
-             }
+          // บังคับให้กราฟวาดสลับฟันปลา (บวก/ลบ) ทุกๆ จุดข้อมูล เพื่อให้กราฟหนาแน่นเป็นก้อนทึบเหมือน Oscilloscope
+          sessionRef.current.signToggle = !sessionRef.current.signToggle;
+          if (sessionRef.current.signToggle) {
+              acMv = -Math.abs(acMv) * 0.25; 
+          } else {
+              acMv = Math.abs(acMv);
           }
 
           // 3. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (แยกไว้เฉพาะการคำนวณเบื้องหลัง อิงจาก rawMv)
