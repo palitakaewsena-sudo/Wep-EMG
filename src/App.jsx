@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, BarChart, Bar 
+  BarChart, Bar, ResponsiveContainer, XAxis, YAxis, CartesianGrid 
 } from 'recharts';
 import { 
   Activity, Settings as SettingsIcon, Play, Square, Bluetooth, BluetoothConnected, 
   History, Globe, Zap, Hand, Clock, BarChart2, Target, SlidersHorizontal, RefreshCw,
   UserPlus, User, Lock, LogOut, Users, Check
 } from 'lucide-react';
+import WaveformCanvas from './components/WaveformCanvas';
 import './index.css';
 
 const i18n = {
@@ -391,7 +392,7 @@ function App() {
   const filterRef = useRef({ dcOffset: 1650, freq: 5.0 });
   const timestampRef = useRef({ lastTime: 0, sampleCount: 0, measuredInterval: 0.002 });
   const telemetryRef = useRef({ vpp: 0 }); // Store latest Vpp for software gain
-  const pendingPointsRef = useRef([]);
+  const waveformRef = useRef(null);
   
   const calibRef = useRef({
     isActive: false,
@@ -547,16 +548,14 @@ function App() {
     setForceFinish(false);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
-    pendingPointsRef.current = [];
-    setEmgData([]);
+    waveformRef.current?.reset();
     setCurrentVpp(0);
     setCurrentVavg(0);
   };
 
   const handleStopSession = () => {
     setIsSessionActive(false);
-    pendingPointsRef.current = [];
-    setEmgData([]);
+    waveformRef.current?.reset();
     setCurrentVpp(0);
     setCurrentVavg(0);
     sessionRef.current.peakHoldBuffer = [];
@@ -566,14 +565,14 @@ function App() {
     setIsSessionActive(false);
     setGripCount(0);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
-    pendingPointsRef.current = [];
-    setEmgData([]);
+    waveformRef.current?.reset();
     setCurrentVpp(0);
     setCurrentVavg(0);
   };
 
   function finishSession() {
     setIsSessionActive(false);
+    waveformRef.current?.reset();
     const targetSetTime = isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60;
     
     let actualTime;
@@ -781,10 +780,8 @@ function App() {
             const now = Date.now();
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
 
-            // ส่งค่าเข้าคิวกราฟแบบ downsample 2:1 เพื่อความลื่นไหลและเห็นยอดคลื่นชัดเจน ไม่ทึบเป็นแถบ
-            if (sessionRef.current.sampleCount % 2 === 0) {
-              newPoints.push({ time: elapsedSeconds.toFixed(2) + "s", rawMv: Math.round(plotMv) });
-            }
+            // ส่งค่าเข้าสู่ WaveformCanvas แบบ Real-time ทันที (0ms delay, 60 FPS GPU Rendering)
+            waveformRef.current?.pushSample(plotMv, elapsedSeconds);
 
             // 2-State Machine for Grip Counting
             const triggerThr = Number(sessionRef.current.startMv);
@@ -813,24 +810,6 @@ function App() {
                setForceFinish(true);
             }
           }
-        }
-      }
-      
-      // 1. นำข้อมูลคลื่นเข้าคิว pendingPoints
-      if (newPoints.length > 0) {
-        pendingPointsRef.current.push(...newPoints);
-      }
-
-      // 2. Throttle การวาดกราฟที่ ~25 FPS (ทุกๆ 40ms) เพื่อความลื่นไหล ป้องกันเบราว์เซอร์กระตุกค้าง
-      const nowChart = Date.now();
-      if (nowChart - sessionRef.current.lastChartUpdate >= 40) {
-        sessionRef.current.lastChartUpdate = nowChart;
-        if (pendingPointsRef.current.length > 0) {
-          const incoming = pendingPointsRef.current;
-          pendingPointsRef.current = [];
-          setEmgData(prevData => {
-            return [...prevData, ...incoming].slice(-250); // 250 จุด แสดงผลเสถียร สวยงาม คลื่นไม่ทึบ
-          });
         }
       }
 
@@ -1073,30 +1052,14 @@ function App() {
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t.chartY}</div>
         </div>
         <div className="chart-container">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-              <XAxis dataKey="time" tick={{ fontSize: 12, fill: '#666666' }} minTickGap={30} />
-              <YAxis 
-                type="number"
-                domain={[-4000, 4000]} 
-                ticks={[-4000, -3000, -2000, -1000, 0, 1000, 2000, 3000, 4000]}
-                tick={{ fontSize: 12, fill: 'var(--text-muted)' }} 
-                axisLine={false} 
-                tickLine={false} 
-                allowDataOverflow={true}
-              />
-              
-              <ReferenceLine y={0} stroke="var(--border-color)" strokeDasharray="3 3" />
-              
-              <ReferenceLine y={startGripMv - dcOffsetState} stroke="var(--accent-teal)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.startAt} ${startGripMv.toFixed(0)} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv - dcOffsetState} stroke="var(--accent-orange)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.stopAt} ${stopGripMv.toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
-                
-              <Line type="linear" dataKey="rawMv" stroke="#FACC15" strokeWidth={1} dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
+          <WaveformCanvas
+            ref={waveformRef}
+            isSessionActive={isSessionActive}
+            startGripMv={startGripMv}
+            stopGripMv={stopGripMv}
+            dcBaseline={dcOffsetState}
+            t={t}
+          />
         </div>
       </div>
 
