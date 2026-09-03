@@ -22,8 +22,8 @@ const i18n = {
     deviceSub: "อุปกรณ์ EMG ผ่าน BLE (ESP32)",
     connectBtn: "เชื่อมต่อ Bluetooth",
     disconnectBtn: "ยกเลิกการเชื่อมต่อ",
-    emgVal: "ค่า EMG",
-    emgSub: "mV Vpp · Raw ADC: 0",
+    emgVal: "Vaverage",
+    emgSub: "mV Vaverage · Raw ADC: 0",
     vmax: "Vmax (สูงสุด)",
     vmin: "Vmin (ต่ำสุด)",
     freq: "ความถี่ (Hz)",
@@ -86,7 +86,7 @@ const i18n = {
     colSetTime: "ตั้งเวลา",
     colRealTime: "เวลาจริง",
     colGrip: "กำมือ (ครั้ง)",
-    colEMG: "EMG (mV)",
+    colEMG: "Vaverage (mV)",
     colAvg: "เฉลี่ย (วิ)",
     
     // Auth
@@ -144,8 +144,8 @@ const i18n = {
     deviceSub: "EMG device via BLE (ESP32)",
     connectBtn: "Connect Bluetooth",
     disconnectBtn: "Disconnect",
-    emgVal: "EMG Value",
-    emgSub: "mV Vpp · Raw ADC: 0",
+    emgVal: "Vaverage",
+    emgSub: "mV Vaverage · Raw ADC: 0",
     vmax: "Vmax (Max)",
     vmin: "Vmin (Min)",
     freq: "Freq (Hz)",
@@ -208,7 +208,7 @@ const i18n = {
     colSetTime: "Set Time",
     colRealTime: "Actual Time",
     colGrip: "Grips",
-    colEMG: "EMG (mV)",
+    colEMG: "Vaverage (mV)",
     colAvg: "Avg (s)",
     
     // Auth
@@ -368,6 +368,7 @@ function App() {
 
   // Data & Signal State
   const [emgData, setEmgData] = useState([]);
+  const [currentVavg, setCurrentVavg] = useState(0);
   const [currentVpp, setCurrentVpp] = useState(0);
   const [currentVmax, setCurrentVmax] = useState(0);
   const [currentVmin, setCurrentVmin] = useState(0);
@@ -549,6 +550,7 @@ function App() {
     setIsSessionActive(false);
     setEmgData([]);
     setCurrentVpp(0);
+    setCurrentVavg(0);
     sessionRef.current.peakHoldBuffer = [];
   };
 
@@ -558,6 +560,7 @@ function App() {
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setEmgData([]);
     setCurrentVpp(0);
+    setCurrentVavg(0);
   };
 
   function finishSession() {
@@ -583,7 +586,7 @@ function App() {
       setTime: targetSetTime === 0 ? (lang === 'th' ? 'ไม่จำกัด' : 'Unlimited') : formatTime(targetSetTime),
       realTime: formatTime(actualTime),
       grips: sessionRef.current.gripCount,
-      emg: currentVpp.toFixed(1),
+      emg: currentVavg.toFixed(1),
       avg: sessionRef.current.gripCount > 0 ? (actualTime / sessionRef.current.gripCount).toFixed(1) : 0
     };
     
@@ -798,24 +801,31 @@ function App() {
         }
       }
       
-      if (sessionRef.current.isActive || calibRef.current.isActive) {
-        // Calculate Vmax, Vmin, Vp-p dynamically from real-time peak-hold buffer
+      if (sessionRef.current.isActive || calibRef.current.isActive || isConnected) {
+        // Calculate Vmax, Vmin, Vp-p, Vaverage dynamically from real-time peak-hold buffer
         if (sessionRef.current.peakHoldBuffer.length > 0) {
           const nowUI = Date.now();
-          // อัปเดต UI ทุกๆ 800-1000ms (1 Hz) เพื่อให้ตัวเลขนิ่ง อ่านง่ายแบบหน้าจอออสสิโลสโคป
-          if (nowUI - sessionRef.current.lastUiUpdate >= 800) {
+          // อัปเดต UI ทุกๆ 250ms เพื่อให้ตัวเลขนิ่ง อ่านง่าย และตอบสนองต่อแรงบีบมือได้ดี
+          if (nowUI - sessionRef.current.lastUiUpdate >= 250) {
             sessionRef.current.lastUiUpdate = nowUI;
             
             const buffermV = sessionRef.current.peakHoldBuffer;
             const Vmax = Math.max(...buffermV);
             const Vmin = Math.min(...buffermV);
             const Vpp = Vmax - Vmin;
+
+            // คำนวณ Vaverage (Average Rectified Value / Mean Absolute Value MAV) จากสัญญาณคลื่นช่วง 250 จุดล่าสุด (~0.5 วินาที)
+            const recentSamples = buffermV.slice(-250);
+            const sumAbs = recentSamples.reduce((sum, val) => sum + Math.abs(val), 0);
+            const Vavg = sumAbs / (recentSamples.length || 1);
             
             // กรองตัวเลขนิ่งด้วย Exponential Moving Average (EMA)
-            setCurrentVmax(prev => (prev === 0 ? Vmax : (prev * 0.8) + (Vmax * 0.2)));
-            setCurrentVmin(prev => (prev === 0 ? Vmin : (prev * 0.8) + (Vmin * 0.2)));
-            setCurrentVpp(prev => (prev === 0 ? Vpp : (prev * 0.8) + (Vpp * 0.2)));
+            setCurrentVmax(prev => (prev === 0 ? Vmax : (prev * 0.7) + (Vmax * 0.3)));
+            setCurrentVmin(prev => (prev === 0 ? Vmin : (prev * 0.7) + (Vmin * 0.3)));
+            setCurrentVpp(prev => (prev === 0 ? Vpp : (prev * 0.7) + (Vpp * 0.3)));
+            setCurrentVavg(prev => (prev === 0 ? Vavg : (prev * 0.7) + (Vavg * 0.3)));
             telemetryRef.current.vpp = Vpp;
+            telemetryRef.current.vavg = Vavg;
             if (sessionRef.current.dcBaseline) setDcOffsetState(sessionRef.current.dcBaseline);
 
             let newFreq = 0.0;
@@ -1046,7 +1056,7 @@ function App() {
       {/* Metrics Row */}
       <div className="card metric-card col-span-4">
         <div className="metric-header"><Zap size={16} /> {t.emgVal}</div>
-        <div className="metric-value teal">{currentVpp.toFixed(1)}</div>
+        <div className="metric-value teal">{currentVavg.toFixed(1)}</div>
         <div className="metric-sub">{t.emgSub.replace('0', rawAdc.toFixed(0))}</div>
       </div>
       <div className="card metric-card col-span-4">
