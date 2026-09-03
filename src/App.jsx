@@ -7,6 +7,7 @@ import {
   History, Globe, Zap, Hand, Clock, BarChart2, Target, SlidersHorizontal, RefreshCw,
   UserPlus, User, Lock, LogOut, Users, Check
 } from 'lucide-react';
+import Oscilloscope from './components/Oscilloscope';
 import './index.css';
 
 const i18n = {
@@ -367,6 +368,7 @@ function App() {
   const [calibTimeLeft, setCalibTimeLeft] = useState(0);
 
   // Data & Signal State
+  const scopeDataRef = useRef([]);
   const [emgData, setEmgData] = useState([]);
   const [currentVpp, setCurrentVpp] = useState(0);
   const [currentVmax, setCurrentVmax] = useState(0);
@@ -543,11 +545,13 @@ function App() {
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
     setEmgData([]);
+    scopeDataRef.current = [];
   };
 
   const handleStopSession = () => {
     setIsSessionActive(false);
     setEmgData([]);
+    scopeDataRef.current = [];
     setCurrentVpp(0);
     sessionRef.current.peakHoldBuffer = [];
   };
@@ -557,6 +561,7 @@ function App() {
     setGripCount(0);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setEmgData([]);
+    scopeDataRef.current = [];
     setCurrentVpp(0);
   };
 
@@ -757,16 +762,19 @@ function App() {
 
           // Peak-Hold Buffer (Always running to update UI in real-time)
           sessionRef.current.peakHoldBuffer.push(plotMv);
-          if (sessionRef.current.peakHoldBuffer.length > 1000) {
+          if (sessionRef.current.peakHoldBuffer.length > 600) {
             sessionRef.current.peakHoldBuffer.shift();
+          }
+
+          // Push into High-Speed Oscilloscope Buffer (60 FPS Canvas)
+          scopeDataRef.current.push(plotMv);
+          if (scopeDataRef.current.length > 600) {
+            scopeDataRef.current.shift();
           }
 
           if (sessionRef.current.isActive) {
             const now = Date.now();
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
-
-            // ส่งค่าที่ผ่านวงจร AC Coupling จำลองเข้าไปวาดกราฟ
-            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: plotMv });
 
             // 2-State Machine for Grip Counting
             const triggerThr = Number(sessionRef.current.startMv);
@@ -798,69 +806,30 @@ function App() {
         }
       }
       
-      if (sessionRef.current.isActive || calibRef.current.isActive) {
-        // Calculate Vmax, Vmin, Vp-p dynamically from real-time peak-hold buffer
-        if (sessionRef.current.peakHoldBuffer.length > 0) {
-          const nowUI = Date.now();
-          // อัปเดต UI ทุกๆ 800-1000ms (1 Hz) เพื่อให้ตัวเลขนิ่ง อ่านง่ายแบบหน้าจอออสสิโลสโคป
-          if (nowUI - sessionRef.current.lastUiUpdate >= 800) {
-            sessionRef.current.lastUiUpdate = nowUI;
-            
-            const buffermV = sessionRef.current.peakHoldBuffer;
-            const Vmax = Math.max(...buffermV);
-            const Vmin = Math.min(...buffermV);
-            const Vpp = Vmax - Vmin;
-            
-            // กรองตัวเลขนิ่งด้วย Exponential Moving Average (EMA)
-            setCurrentVmax(prev => (prev === 0 ? Vmax : (prev * 0.8) + (Vmax * 0.2)));
-            setCurrentVmin(prev => (prev === 0 ? Vmin : (prev * 0.8) + (Vmin * 0.2)));
-            setCurrentVpp(prev => (prev === 0 ? Vpp : (prev * 0.8) + (Vpp * 0.2)));
-            telemetryRef.current.vpp = Vpp;
-            if (sessionRef.current.dcBaseline) setDcOffsetState(sessionRef.current.dcBaseline);
-
-            let newFreq = 0.0;
-
-            // Frequency calculated only if signal is large enough (Vp-p >= 50mV)
-            if (Vpp >= 50.0) {
-              // Calculate Frequency from Period (T) of the signal using the chart data
-              const freqBuffer = buffermV;
-              const meanVal = freqBuffer.reduce((a, b) => a + b, 0) / freqBuffer.length;
-              let zcIndices = [];
-              let isAbove = freqBuffer[0] > meanVal;
-              const hysteresis = 50.0; // +/- 50 mV noise margin
-              
-              for (let i = 1; i < freqBuffer.length; i++) {
-                if (!isAbove && freqBuffer[i] > meanVal + hysteresis) {
-                  isAbove = true;
-                  zcIndices.push(i);
-                } else if (isAbove && freqBuffer[i] < meanVal - hysteresis) {
-                  isAbove = false;
-                }
-              }
-              
-              if (zcIndices.length > 1) {
-                // Calculate period (T) in samples between the LAST TWO crossings
-                const lastTwo = zcIndices.slice(-2);
-                const periodSamples = lastTwo[1] - lastTwo[0];
-                
-                // Assume 500 samples/sec (2ms per sample)
-                const T_seconds = periodSamples / 500.0;
-                newFreq = 1.0 / T_seconds;
-              }
+      // Telemetry & UI Updates with Fast Response (every 60ms = ~16 FPS)
+      const nowUI = Date.now();
+      if (nowUI - sessionRef.current.lastUiUpdate >= 60) {
+        sessionRef.current.lastUiUpdate = nowUI;
+        
+        const buffermV = sessionRef.current.peakHoldBuffer;
+        if (buffermV.length > 0) {
+          const Vmax = Math.max(...buffermV);
+          const Vmin = Math.min(...buffermV);
+          const Vpp = Vmax - Vmin;
+          
+          // Fast Attack (Instant 0ms response on contraction), Smooth Decay
+          setCurrentVpp(prev => {
+            if (Vpp > prev) {
+              return Vpp;
+            } else {
+              return (prev * 0.85) + (Vpp * 0.15);
             }
-            
-            setCurrentFreq(newFreq);
-          }
-        }
-
-        if (lastRaw > 0) setRawAdc(lastRaw);
-
-        if (sessionRef.current.isActive && newPoints.length > 0) {
-          setEmgData(prevData => {
-            const combined = [...prevData, ...newPoints].slice(-1000); // 1000 points sliding window (500Hz * 2s)
-            return combined;
           });
+          telemetryRef.current.vpp = Vpp;
         }
+
+        if (sessionRef.current.dcBaseline) setDcOffsetState(sessionRef.current.dcBaseline);
+        if (lastRaw > 0) setRawAdc(lastRaw);
       }
     };
 
@@ -1064,38 +1033,31 @@ function App() {
 
       {/* Chart */}
       <div className="card col-span-8" style={{ display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 600 }}>
             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isConnected ? 'var(--accent-teal)' : '#CBD5E1' }} />
-            {t.chartTitle}
+            {isSessionActive 
+              ? (lang === 'th' ? 'EMG · กำลังบันทึกสัญญาณ' : 'EMG · Active Recording') 
+              : (isConnected ? (lang === 'th' ? 'EMG · Oscilloscope (Live Scope)' : 'EMG · Live Oscilloscope') : t.chartTitle)}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t.chartY}</div>
         </div>
-        <div className="chart-container">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={emgData} margin={{ top: 20, right: 40, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-              <XAxis dataKey="time" tick={{ fontSize: 12, fill: '#666666' }} minTickGap={30} />
-              <YAxis 
-                type="number"
-                domain={[-4000, 4000]} 
-                ticks={[-4000, -3000, -2000, -1000, 0, 1000, 2000, 3000, 4000]}
-                tick={{ fontSize: 12, fill: 'var(--text-muted)' }} 
-                axisLine={false} 
-                tickLine={false} 
-                allowDataOverflow={true}
-              />
-              
-              <ReferenceLine y={0} stroke="var(--border-color)" strokeDasharray="3 3" />
-              
-              <ReferenceLine y={startGripMv - dcOffsetState} stroke="var(--accent-teal)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.startAt} ${startGripMv.toFixed(0)} mV`, fill: 'var(--accent-teal)', fontSize: 12 }} />
-              <ReferenceLine y={stopGripMv - dcOffsetState} stroke="var(--accent-orange)" strokeDasharray="4 4" 
-                label={{ position: 'right', value: `${t.stopAt} ${stopGripMv.toFixed(0)} mV`, fill: 'var(--accent-orange)', fontSize: 12, dy: -15 }} />
-                
-              <Line type="linear" dataKey="rawMv" stroke="#FACC15" strokeWidth={1} dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="chart-container" style={{ flex: 1, minHeight: '380px', marginTop: 0 }}>
+          <Oscilloscope 
+            dataRef={scopeDataRef}
+            isConnected={isConnected}
+            isSessionActive={isSessionActive}
+            startGripMv={startGripMv}
+            stopGripMv={stopGripMv}
+            dcOffset={dcOffsetState}
+            vpp={currentVpp}
+            rawAdc={rawAdc}
+            gripCount={gripCount}
+            timebase="100ms/div"
+            sampleRate="500 Sa/s"
+            vRange={4000}
+            lang={lang}
+          />
         </div>
       </div>
 
