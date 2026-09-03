@@ -16,14 +16,22 @@ const WaveformCanvas = forwardRef(({
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
-  // 1,000 points covers exactly 2.0 seconds at 500 Hz (matching Keysight 200ms/div * 10 div)
-  const maxPoints = 1000;
+  // 2,000 points covers 2.0 seconds at 500 Hz (dual positive and negative samples)
+  const maxPoints = 2000;
   const samplesRef = useRef([]);
 
   useImperativeHandle(ref, () => ({
     pushSample: (plotMv, timeSec) => {
       samplesRef.current.push({ mv: plotMv, time: timeSec });
       if (samplesRef.current.length > maxPoints) {
+        samplesRef.current.shift();
+      }
+    },
+    pushDualSample: (posMv, negMv, timeSec) => {
+      samplesRef.current.push({ mv: posMv, time: timeSec });
+      samplesRef.current.push({ mv: negMv, time: timeSec });
+      if (samplesRef.current.length > maxPoints) {
+        samplesRef.current.shift();
         samplesRef.current.shift();
       }
     },
@@ -180,11 +188,11 @@ const WaveformCanvas = forwardRef(({
         ctx.textBaseline = 'top';
 
         const lastTime = samples[samples.length - 1].time || 0;
+        const startT = Math.max(0, lastTime - 2.0);
         for (let div = 0; div <= 10; div += 2) {
           const x = margin.left + (div / 10) * plotWidth;
-          // Relative time window: (div * 0.2s)
-          const divTime = (div * 0.2).toFixed(1);
-          ctx.fillText(`${divTime}s`, x, margin.top + plotHeight + 6);
+          const timeText = (startT + div * 0.2).toFixed(1) + 's';
+          ctx.fillText(timeText, x, margin.top + plotHeight + 6);
         }
       } else {
         // Flat ground baseline at 0V when in Standby

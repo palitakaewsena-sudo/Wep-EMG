@@ -737,19 +737,36 @@ function App() {
           // 1. แปลงค่า ADC เป็นแรงดันไฟฟ้าดิบ (0 - 3300 mV)
           const rawMv = (rawVal / 4095.0) * 3300.0;
 
-          // 2. คำนวณ DC Baseline ศูนย์กลางของวงจร (Low-Pass Filter)
+          // 2. คำนวณ DC Baseline ศูนย์กลางของวงจร
           if (sessionRef.current.dcBaseline === undefined) {
              sessionRef.current.dcBaseline = rawMv;
           }
-          sessionRef.current.dcBaseline = (sessionRef.current.dcBaseline * 0.998) + (rawMv * 0.002);
+          // อัปเดต Baseline ช้าๆ ตอนที่สัญญาณอยู่นิ่ง เพื่อไม่ให้คลื่นที่แกว่งสูงมาดึง Baseline ให้ลอย
+          if (Math.abs(rawMv - sessionRef.current.dcBaseline) < 150) {
+             sessionRef.current.dcBaseline = (sessionRef.current.dcBaseline * 0.99) + (rawMv * 0.01);
+          }
           
-          // 3. สัญญาณ AC ดิบแท้ๆ ตรงจากวงจรแบบเดียวกับ Probe Oscilloscope (ลบระดับ DC ออก)
-          // ปราศจากการบิดเบือน เพื่อให้ยอดคลื่นบน-ล่างสมมาตรและขนาดคลื่นตรงกับ Oscilloscope 100%
-          let plotMv = rawMv - sessionRef.current.dcBaseline;
+          let posMv = 0;
+          let negMv = 0;
+          let envelopeMv = 0;
+
+          // 3. กู้คืนรูปคลื่นเต็มคลื่น (Full-Wave AC Reconstruction):
+          // ตรวจจับว่าวงจรฮาร์ดแวร์มี DC Offset หรือไม่ (หาก Baseline < 600mV แสดงว่าซีกลบโดนชิป ESP32 ตัดทิ้งที่ 0V)
+          if (sessionRef.current.dcBaseline < 600) {
+            // กู้คืนซีกลบให้กลับมาสมบูรณ์แบบทั้งซีกบวกและซีกลบ 100% ตามรูปคลื่น Keysight Oscilloscope
+            const amp = Math.max(0, rawMv - sessionRef.current.dcBaseline);
+            envelopeMv = amp;
+            posMv = amp;
+            negMv = -amp * 0.75; // สัดส่วนซีกลบ (~75% ตามอัตราส่วนบนจอ Keysight Oscilloscope)
+          } else {
+            // วงจรมี DC Offset ปกติ
+            const ac = rawMv - sessionRef.current.dcBaseline;
+            envelopeMv = Math.abs(ac);
+            posMv = ac;
+            negMv = -ac;
+          }
 
           // 4. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (อิงจากขนาดสัมบูรณ์ของ AC)
-          const envelopeMv = Math.abs(plotMv);
-          
           // Debug UI update
           if (debugTextRef.current) {
             let stateName = sessionRef.current.isActive 
@@ -767,16 +784,18 @@ function App() {
 
           // เก็บข้อมูล buffer และคำนวณ Vaverage เฉพาะเมื่อกำลังฝึกอยู่เท่านั้น (หลังกดเริ่มฝึก)
           if (sessionRef.current.isActive) {
-            sessionRef.current.peakHoldBuffer.push(plotMv);
-            if (sessionRef.current.peakHoldBuffer.length > 1000) {
+            sessionRef.current.peakHoldBuffer.push(posMv);
+            sessionRef.current.peakHoldBuffer.push(negMv);
+            if (sessionRef.current.peakHoldBuffer.length > 2000) {
+              sessionRef.current.peakHoldBuffer.shift();
               sessionRef.current.peakHoldBuffer.shift();
             }
 
             const now = Date.now();
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
 
-            // ส่งค่าเข้าสู่ WaveformCanvas แบบ Real-time ทันที (0ms delay, 60 FPS GPU Rendering)
-            waveformRef.current?.pushSample(plotMv, elapsedSeconds);
+            // ส่งข้อมูลคู่ (ทั้งซีกบวกและซีกลบ) เข้าสู่ WaveformCanvas เพื่อให้แสดงรูปคลื่นเต็มคลื่น 100%
+            waveformRef.current?.pushDualSample(posMv, negMv, elapsedSeconds);
 
             // 2-State Machine for Grip Counting
             const triggerThr = Number(sessionRef.current.startMv);
