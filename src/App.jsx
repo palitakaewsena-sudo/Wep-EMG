@@ -715,6 +715,16 @@ function App() {
 
       let lines = bufferRef.current.split('\n');
       bufferRef.current = lines.pop(); 
+
+      if (bufferRef.current.length > 256) {
+        bufferRef.current = "";
+      }
+
+      // Zero-Latency Queue Flush: ป้องกันอาการดีเลย์สะสม 1-3 วินาทีจากคิว Bluetooth
+      // หากมีข้อมูลสะสมค้างเกิน 20 บรรทัด ให้ตัดทิ้งข้อมูลเก่า แล้วประมวลผลเฉพาะข้อมูลสด 15 บรรทัดล่าสุดทันที
+      if (lines.length > 20) {
+        lines = lines.slice(-15);
+      }
       
       let newPoints = [];
       let lastRaw = 0;
