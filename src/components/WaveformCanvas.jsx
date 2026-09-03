@@ -16,22 +16,14 @@ const WaveformCanvas = forwardRef(({
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
-  // 2,000 points covers 2.0 seconds at 500 Hz (dual positive and negative samples)
-  const maxPoints = 2000;
+  // 1,000 points covers exactly 2.0 seconds at 500 Hz (pure 1:1 raw sample stream)
+  const maxPoints = 1000;
   const samplesRef = useRef([]);
 
   useImperativeHandle(ref, () => ({
     pushSample: (plotMv, timeSec) => {
       samplesRef.current.push({ mv: plotMv, time: timeSec });
       if (samplesRef.current.length > maxPoints) {
-        samplesRef.current.shift();
-      }
-    },
-    pushDualSample: (posMv, negMv, timeSec) => {
-      samplesRef.current.push({ mv: posMv, time: timeSec });
-      samplesRef.current.push({ mv: negMv, time: timeSec });
-      if (samplesRef.current.length > maxPoints) {
-        samplesRef.current.shift();
         samplesRef.current.shift();
       }
     },
