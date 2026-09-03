@@ -1175,16 +1175,70 @@ function App() {
               <div className="slider-col">
                 <div className="slider-label teal">
                   <span>{t.setStartGrip}</span>
-                  <span style={{ background: 'white', padding: '2px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>{startGripMv.toFixed(1)}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="6000"
+                    step="10"
+                    value={startGripMv}
+                    onChange={e => setStartGripMv(Math.max(0, parseFloat(e.target.value) || 0))}
+                    style={{
+                      background: 'white',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      border: '1px solid var(--border-color)',
+                      width: '85px',
+                      textAlign: 'center',
+                      fontWeight: 600,
+                      color: 'var(--accent-teal)',
+                      outline: 'none',
+                      fontSize: '0.875rem'
+                    }}
+                  />
                 </div>
-                <input type="range" className="range-slider" min="0" max="3300" step="10" value={startGripMv} onChange={e => setStartGripMv(parseFloat(e.target.value))} />
+                <input 
+                  type="range" 
+                  className="range-slider" 
+                  min="0" 
+                  max="5000" 
+                  step="10" 
+                  value={Math.min(5000, startGripMv)} 
+                  onChange={e => setStartGripMv(parseFloat(e.target.value))} 
+                />
               </div>
               <div className="slider-col">
                 <div className="slider-label orange">
                   <span>{t.setStopGrip}</span>
-                  <span style={{ background: 'white', padding: '2px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>{stopGripMv.toFixed(1)}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="6000"
+                    step="10"
+                    value={stopGripMv}
+                    onChange={e => setStopGripMv(Math.max(0, parseFloat(e.target.value) || 0))}
+                    style={{
+                      background: 'white',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      border: '1px solid var(--border-color)',
+                      width: '85px',
+                      textAlign: 'center',
+                      fontWeight: 600,
+                      color: 'var(--accent-orange)',
+                      outline: 'none',
+                      fontSize: '0.875rem'
+                    }}
+                  />
                 </div>
-                <input type="range" className="range-slider orange" min="0" max="3300" step="10" value={stopGripMv} onChange={e => setStopGripMv(parseFloat(e.target.value))} />
+                <input 
+                  type="range" 
+                  className="range-slider orange" 
+                  min="0" 
+                  max="5000" 
+                  step="10" 
+                  value={Math.min(5000, stopGripMv)} 
+                  onChange={e => setStopGripMv(parseFloat(e.target.value))} 
+                />
               </div>
             </div>
           </div>
