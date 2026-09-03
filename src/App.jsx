@@ -391,6 +391,7 @@ function App() {
   const filterRef = useRef({ dcOffset: 1650, freq: 5.0 });
   const timestampRef = useRef({ lastTime: 0, sampleCount: 0, measuredInterval: 0.002 });
   const telemetryRef = useRef({ vpp: 0 }); // Store latest Vpp for software gain
+  const pendingPointsRef = useRef([]);
   
   const calibRef = useRef({
     isActive: false,
@@ -415,6 +416,8 @@ function App() {
     maBuffer: [],
     emaValue: 0,
     lastUiUpdate: 0,
+    lastChartUpdate: 0,
+    sampleCount: 0,
   });
 
   const [completionModal, setCompletionModal] = useState({ show: false, reason: '', grips: 0, time: 0 });
@@ -543,11 +546,13 @@ function App() {
     setForceFinish(false);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
+    pendingPointsRef.current = [];
     setEmgData([]);
   };
 
   const handleStopSession = () => {
     setIsSessionActive(false);
+    pendingPointsRef.current = [];
     setEmgData([]);
     setCurrentVpp(0);
     setCurrentVavg(0);
@@ -558,6 +563,7 @@ function App() {
     setIsSessionActive(false);
     setGripCount(0);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
+    pendingPointsRef.current = [];
     setEmgData([]);
     setCurrentVpp(0);
     setCurrentVavg(0);
@@ -764,12 +770,16 @@ function App() {
             sessionRef.current.peakHoldBuffer.shift();
           }
 
+          sessionRef.current.sampleCount = (sessionRef.current.sampleCount || 0) + 1;
+
           if (sessionRef.current.isActive) {
             const now = Date.now();
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
 
-            // ส่งค่าที่ผ่านวงจร AC Coupling จำลองเข้าไปวาดกราฟ
-            newPoints.push({ time: elapsedSeconds.toFixed(1) + "s", rawMv: plotMv });
+            // ส่งค่าเข้าคิวกราฟแบบ downsample 2:1 เพื่อความลื่นไหลและเห็นยอดคลื่นชัดเจน ไม่ทึบเป็นแถบ
+            if (sessionRef.current.sampleCount % 2 === 0) {
+              newPoints.push({ time: elapsedSeconds.toFixed(2) + "s", rawMv: Math.round(plotMv) });
+            }
 
             // 2-State Machine for Grip Counting
             const triggerThr = Number(sessionRef.current.startMv);
@@ -801,75 +811,49 @@ function App() {
         }
       }
       
+      // 1. นำข้อมูลคลื่นเข้าคิว pendingPoints
+      if (newPoints.length > 0) {
+        pendingPointsRef.current.push(...newPoints);
+      }
+
+      // 2. Throttle การวาดกราฟที่ ~25 FPS (ทุกๆ 40ms) เพื่อความลื่นไหล ป้องกันเบราว์เซอร์กระตุกค้าง
+      const nowChart = Date.now();
+      if (nowChart - sessionRef.current.lastChartUpdate >= 40) {
+        sessionRef.current.lastChartUpdate = nowChart;
+        if (pendingPointsRef.current.length > 0) {
+          const incoming = pendingPointsRef.current;
+          pendingPointsRef.current = [];
+          setEmgData(prevData => {
+            return [...prevData, ...incoming].slice(-250); // 250 จุด แสดงผลเสถียร สวยงาม คลื่นไม่ทึบ
+          });
+        }
+      }
+
+      // 3. Throttle การอัปเดตตัวเลขพารามิเตอร์ (Vaverage, Raw ADC) ที่ 100ms (10 ครั้ง/วิ)
       if (sessionRef.current.isActive || calibRef.current.isActive || isConnected) {
-        // Calculate Vmax, Vmin, Vp-p, Vaverage dynamically from real-time peak-hold buffer
         if (sessionRef.current.peakHoldBuffer.length > 0) {
           const nowUI = Date.now();
-          // อัปเดต UI ทุกๆ 250ms เพื่อให้ตัวเลขนิ่ง อ่านง่าย และตอบสนองต่อแรงบีบมือได้ดี
-          if (nowUI - sessionRef.current.lastUiUpdate >= 250) {
+          if (nowUI - sessionRef.current.lastUiUpdate >= 100) {
             sessionRef.current.lastUiUpdate = nowUI;
             
             const buffermV = sessionRef.current.peakHoldBuffer;
-            const Vmax = Math.max(...buffermV);
-            const Vmin = Math.min(...buffermV);
-            const Vpp = Vmax - Vmin;
-
-            // คำนวณ Vaverage (Average Rectified Value / Mean Absolute Value MAV) จากสัญญาณคลื่นช่วง 250 จุดล่าสุด (~0.5 วินาที)
-            const recentSamples = buffermV.slice(-250);
+            const recentSamples = buffermV.slice(-150); // 150 จุด (~0.3 วินาที)
             const sumAbs = recentSamples.reduce((sum, val) => sum + Math.abs(val), 0);
             const Vavg = sumAbs / (recentSamples.length || 1);
             
-            // กรองตัวเลขนิ่งด้วย Exponential Moving Average (EMA)
-            setCurrentVmax(prev => (prev === 0 ? Vmax : (prev * 0.7) + (Vmax * 0.3)));
-            setCurrentVmin(prev => (prev === 0 ? Vmin : (prev * 0.7) + (Vmin * 0.3)));
-            setCurrentVpp(prev => (prev === 0 ? Vpp : (prev * 0.7) + (Vpp * 0.3)));
-            setCurrentVavg(prev => (prev === 0 ? Vavg : (prev * 0.7) + (Vavg * 0.3)));
-            telemetryRef.current.vpp = Vpp;
+            // Fast Attack (ตอบสนอง 0ms เมื่อออกแรงบีบ), Smooth Decay (ค่อยๆ ผ่อนลงให้อ่านง่าย)
+            setCurrentVavg(prev => {
+              if (Vavg > prev) {
+                return (prev * 0.3) + (Vavg * 0.7); // ตอบสนองทันที
+              } else {
+                return (prev * 0.8) + (Vavg * 0.2); // ค่อยๆ ผ่อนลงให้อ่านง่าย
+              }
+            });
             telemetryRef.current.vavg = Vavg;
-            if (sessionRef.current.dcBaseline) setDcOffsetState(sessionRef.current.dcBaseline);
-
-            let newFreq = 0.0;
-
-            // Frequency calculated only if signal is large enough (Vp-p >= 50mV)
-            if (Vpp >= 50.0) {
-              // Calculate Frequency from Period (T) of the signal using the chart data
-              const freqBuffer = buffermV;
-              const meanVal = freqBuffer.reduce((a, b) => a + b, 0) / freqBuffer.length;
-              let zcIndices = [];
-              let isAbove = freqBuffer[0] > meanVal;
-              const hysteresis = 50.0; // +/- 50 mV noise margin
-              
-              for (let i = 1; i < freqBuffer.length; i++) {
-                if (!isAbove && freqBuffer[i] > meanVal + hysteresis) {
-                  isAbove = true;
-                  zcIndices.push(i);
-                } else if (isAbove && freqBuffer[i] < meanVal - hysteresis) {
-                  isAbove = false;
-                }
-              }
-              
-              if (zcIndices.length > 1) {
-                // Calculate period (T) in samples between the LAST TWO crossings
-                const lastTwo = zcIndices.slice(-2);
-                const periodSamples = lastTwo[1] - lastTwo[0];
-                
-                // Assume 500 samples/sec (2ms per sample)
-                const T_seconds = periodSamples / 500.0;
-                newFreq = 1.0 / T_seconds;
-              }
-            }
             
-            setCurrentFreq(newFreq);
+            if (sessionRef.current.dcBaseline) setDcOffsetState(sessionRef.current.dcBaseline);
+            if (lastRaw > 0) setRawAdc(lastRaw);
           }
-        }
-
-        if (lastRaw > 0) setRawAdc(lastRaw);
-
-        if (sessionRef.current.isActive && newPoints.length > 0) {
-          setEmgData(prevData => {
-            const combined = [...prevData, ...newPoints].slice(-1000); // 1000 points sliding window (500Hz * 2s)
-            return combined;
-          });
         }
       }
     };
@@ -1077,7 +1061,7 @@ function App() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 600 }}>
             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isConnected ? 'var(--accent-teal)' : '#CBD5E1' }} />
-            {t.chartTitle}
+            {isSessionActive ? (lang === 'th' ? 'EMG · กำลังฝึก' : 'EMG · Training') : t.chartTitle}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t.chartY}</div>
         </div>
