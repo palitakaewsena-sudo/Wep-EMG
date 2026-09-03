@@ -543,11 +543,14 @@ function App() {
     sessionRef.current.maBuffer = [];
     sessionRef.current.emaValue = 0;
     sessionRef.current.startTime = Date.now();
+    sessionRef.current.isActive = true;
     setForceFinish(false);
     setTimeLeft(isCustomTime ? customMin * 60 + customSec : sessionTimePreset * 60);
     setIsSessionActive(true);
     pendingPointsRef.current = [];
     setEmgData([]);
+    setCurrentVpp(0);
+    setCurrentVavg(0);
   };
 
   const handleStopSession = () => {
@@ -610,6 +613,8 @@ function App() {
     
     sessionRef.current.finishTime = 0;
     sessionRef.current.finishReason = '';
+    setCurrentVavg(0);
+    sessionRef.current.peakHoldBuffer = [];
   }
 
   const handleConnect = async () => {
@@ -764,15 +769,15 @@ function App() {
             calibRef.current.rawBuffer.push(envelopeMv);
           }
 
-          // Peak-Hold Buffer (Always running to update UI in real-time)
-          sessionRef.current.peakHoldBuffer.push(plotMv);
-          if (sessionRef.current.peakHoldBuffer.length > 1000) {
-            sessionRef.current.peakHoldBuffer.shift();
-          }
-
           sessionRef.current.sampleCount = (sessionRef.current.sampleCount || 0) + 1;
 
+          // เก็บข้อมูล buffer และคำนวณ Vaverage เฉพาะเมื่อกำลังฝึกอยู่เท่านั้น (หลังกดเริ่มฝึก)
           if (sessionRef.current.isActive) {
+            sessionRef.current.peakHoldBuffer.push(plotMv);
+            if (sessionRef.current.peakHoldBuffer.length > 500) {
+              sessionRef.current.peakHoldBuffer.shift();
+            }
+
             const now = Date.now();
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
 
@@ -829,31 +834,33 @@ function App() {
         }
       }
 
-      // 3. Throttle การอัปเดตตัวเลขพารามิเตอร์ (Vaverage, Raw ADC) ที่ 100ms (10 ครั้ง/วิ)
-      if (sessionRef.current.isActive || calibRef.current.isActive || isConnected) {
+      // 3. อัปเดตตัวเลขพารามิเตอร์ Vaverage เฉพาะเมื่อกำลังฝึกอยู่เท่านั้น (หลังกดเริ่มฝึก)
+      if (sessionRef.current.isActive) {
         if (sessionRef.current.peakHoldBuffer.length > 0) {
           const nowUI = Date.now();
           if (nowUI - sessionRef.current.lastUiUpdate >= 100) {
             sessionRef.current.lastUiUpdate = nowUI;
             
             const buffermV = sessionRef.current.peakHoldBuffer;
-            const recentSamples = buffermV.slice(-150); // 150 จุด (~0.3 วินาที)
+            const recentSamples = buffermV.slice(-100); // 100 จุดล่าสุด (~0.2 วินาที)
             const sumAbs = recentSamples.reduce((sum, val) => sum + Math.abs(val), 0);
             const Vavg = sumAbs / (recentSamples.length || 1);
             
-            // Fast Attack (ตอบสนอง 0ms เมื่อออกแรงบีบ), Smooth Decay (ค่อยๆ ผ่อนลงให้อ่านง่าย)
-            setCurrentVavg(prev => {
-              if (Vavg > prev) {
-                return (prev * 0.3) + (Vavg * 0.7); // ตอบสนองทันที
-              } else {
-                return (prev * 0.8) + (Vavg * 0.2); // ค่อยๆ ผ่อนลงให้อ่านง่าย
-              }
-            });
+            // แสดงค่าจริงแบบดิบๆ แท้ๆ 100% ตามสัญญาณกล้ามเนื้อขณะนั้น (ไม่ถ่วง EMA)
+            setCurrentVavg(Vavg);
             telemetryRef.current.vavg = Vavg;
             
             if (sessionRef.current.dcBaseline) setDcOffsetState(sessionRef.current.dcBaseline);
-            if (lastRaw > 0) setRawAdc(lastRaw);
           }
+        }
+      }
+
+      // อัปเดต Raw ADC ทุก 100ms
+      if (lastRaw > 0) {
+        const nowADC = Date.now();
+        if (!sessionRef.current.lastAdcUpdate || nowADC - sessionRef.current.lastAdcUpdate >= 100) {
+          sessionRef.current.lastAdcUpdate = nowADC;
+          setRawAdc(lastRaw);
         }
       }
     };
