@@ -716,6 +716,15 @@ function App() {
 
       let lines = bufferRef.current.split('\n');
       bufferRef.current = lines.pop(); 
+
+      if (bufferRef.current.length > 256) {
+        bufferRef.current = "";
+      }
+
+      // ป้องกันคิวตกค้างสะสม: หากมีข้อมูลค้างเกิน 30 บรรทัด ให้ตัดทิ้งข้อมูลเก่าและหยิบเฉพาะ 15 ค่าสดล่าสุดทันที
+      if (lines.length > 30) {
+        lines = lines.slice(-15);
+      }
       
       let newPoints = [];
       let lastRaw = 0;
