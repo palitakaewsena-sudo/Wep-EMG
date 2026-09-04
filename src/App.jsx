@@ -582,6 +582,8 @@ function App() {
     sessionRef.current.gripCount = 0;
     sessionRef.current.isGripping = false;
     sessionRef.current.lastGripTime = 0;
+    sessionRef.current.envelopeMv = 0;
+    sessionRef.current.releaseHoldStartTime = 0;
     sessionRef.current.rawBuffer = [];
     sessionRef.current.peakHoldBuffer = [];
     sessionRef.current.envelopeBuffer = [];
@@ -793,9 +795,23 @@ function App() {
           
           // 3. สัญญาณ AC แท้จริง 100% จากฮาร์ดแวร์ (ไม่มีการสร้างข้อมูลเท็จ ไม่มีการสะท้อนกระจก)
           const plotMv = rawMv - sessionRef.current.dcBaseline;
-          const envelopeMv = Math.abs(plotMv);
+          const absMv = Math.abs(plotMv);
 
-          // 4. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (อิงจากขนาดสัมบูรณ์ของ AC)
+          // 4. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (Envelope Follower: Fast Attack & Smooth Decay)
+          // สัญญาณ AC ความถี่สูงแกว่งตัด 0V ตลอดเวลา Envelope Follower จะช่วยรักษาความต่อเนื่องของลูกคลื่น
+          // ป้องกันไม่ให้การตัด 0V ภายในจังหวะกำมือเดียวกันถูกนับซ้ำซ้อน
+          if (sessionRef.current.envelopeMv === undefined) {
+            sessionRef.current.envelopeMv = 0;
+          }
+          if (absMv > sessionRef.current.envelopeMv) {
+            // Fast Attack (~15ms): เกาะยอดคลื่นทันทีเมื่อกล้ามเนื้อเริ่มออกแรง
+            sessionRef.current.envelopeMv = (0.4 * absMv) + (0.6 * sessionRef.current.envelopeMv);
+          } else {
+            // Smooth Decay (~120-150ms): ยึดระดับยอดคลื่นไว้ ไม่ให้ตกไปแตะ 0 ในระหว่างที่ยังกำมืออยู่
+            sessionRef.current.envelopeMv = sessionRef.current.envelopeMv * 0.965;
+          }
+          const envelopeMv = sessionRef.current.envelopeMv;
+
           // Debug UI update
           if (debugTextRef.current) {
             let stateName = sessionRef.current.isActive 
@@ -824,19 +840,34 @@ function App() {
             // ส่งข้อมูลจริงตรงจาก ADC เข้าสู่ WaveformCanvas
             waveformRef.current?.pushSample(plotMv, elapsedSeconds);
 
-            // 2-State Machine for Grip Counting
+            // 2-State Machine with Refractory Debounce & Release Confirmation
+            // รับประกันว่าการกำมือ 1 ครั้ง (ลูกคลื่น 1 ลูก) จะถูกนับเป็น 1 ครั้งอย่างแม่นยำ
             const triggerThr = Number(sessionRef.current.startMv);
             const releaseThr = Number(sessionRef.current.stopMv);
+            const nowMs = Date.now();
 
-            if (sessionRef.current.isGripping === false) {
-              if (envelopeMv >= triggerThr) {
+            if (!sessionRef.current.isGripping) {
+              const timeSinceLastGrip = nowMs - (sessionRef.current.lastGripTime || 0);
+              // ต้องเกินเกณฑ์เริ่มกำ และพ้นช่วง Debounce อย่างน้อย 350ms หลังจากการกำครั้งก่อน
+              if (envelopeMv >= triggerThr && timeSinceLastGrip >= 350) {
                 sessionRef.current.isGripping = true;
+                sessionRef.current.lastGripTime = nowMs;
+                sessionRef.current.releaseHoldStartTime = 0;
                 sessionRef.current.gripCount++;
                 setGripCount(prev => prev + 1);
               }
             } else {
+              // อยู่ในสถานะกำลังกำมือ:
+              // ต้องปล่อยมือจริง (Envelope ลดต่ำกว่า releaseThr ต่อเนื่องอย่างน้อย 100ms) ถึงจะปลดสถานะกลับเป็นปล่อยมือ
               if (envelopeMv < releaseThr) {
-                sessionRef.current.isGripping = false;
+                if (!sessionRef.current.releaseHoldStartTime) {
+                  sessionRef.current.releaseHoldStartTime = nowMs;
+                } else if (nowMs - sessionRef.current.releaseHoldStartTime >= 100) {
+                  sessionRef.current.isGripping = false;
+                  sessionRef.current.releaseHoldStartTime = 0;
+                }
+              } else {
+                sessionRef.current.releaseHoldStartTime = 0;
               }
             }
             
