@@ -39,7 +39,8 @@ const i18n = {
     statusWait: "รอเชื่อมต่อ",
     statusTraining: "กำลังฝึก",
     chartTitle: "EMG · Standby",
-    chartY: "แรงดันสัญญาณ EMG (mV)",
+    chartY: "แรงดันสัญญาณ EMG (V)",
+    scaleLabel: "สเกล:",
     stopAt: "หยุดทำ",
     startAt: "เริ่มทำ",
     timeBottom: "Time",
@@ -162,7 +163,8 @@ const i18n = {
     statusWait: "Waiting",
     statusTraining: "Training",
     chartTitle: "EMG · Standby",
-    chartY: "EMG Signal (mV)",
+    chartY: "EMG Signal (V)",
+    scaleLabel: "Scale:",
     stopAt: "Stop at",
     startAt: "Start at",
     timeBottom: "Time",
@@ -430,6 +432,23 @@ function App() {
   const [stopGripMv, setStopGripMv] = useState(880.0);
   const [triggerMult, setTriggerMult] = useState(1.25);
   const [releaseMult, setReleaseMult] = useState(1.10);
+
+  // Waveform Scale State (±1V, ±2V, ±4V)
+  const [waveformScale, setWaveformScale] = useState(() => {
+    try {
+      const saved = localStorage.getItem('emg_waveform_scale');
+      return saved ? Number(saved) : 4;
+    } catch {
+      return 4;
+    }
+  });
+
+  const handleScaleChange = (scale) => {
+    setWaveformScale(scale);
+    try {
+      localStorage.setItem('emg_waveform_scale', scale);
+    } catch {}
+  };
 
   // Refs for real-time processing
   const debugTextRef = useRef(null);
@@ -1239,12 +1258,48 @@ function App() {
 
       {/* Chart */}
       <div className="card col-span-8" style={{ display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 600 }}>
             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isConnected ? 'var(--accent-teal)' : '#CBD5E1' }} />
             {isSessionActive ? (lang === 'th' ? 'EMG · กำลังฝึก' : 'EMG · Training') : t.chartTitle}
           </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t.chartY}</div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {/* Y-Axis Zoom / Scale Buttons */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'var(--bg-main)', padding: '2px 6px', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', paddingRight: '4px', fontWeight: 500 }}>
+                {t.scaleLabel || (lang === 'th' ? 'สเกล:' : 'Scale:')}
+              </span>
+              {[1, 2, 4].map((scaleVal) => {
+                const isActive = waveformScale === scaleVal;
+                return (
+                  <button
+                    key={scaleVal}
+                    type="button"
+                    onClick={() => handleScaleChange(scaleVal)}
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: '0.75rem',
+                      fontWeight: isActive ? 600 : 500,
+                      borderRadius: '6px',
+                      border: isActive ? '1px solid var(--accent-teal)' : '1px solid transparent',
+                      cursor: 'pointer',
+                      background: isActive ? 'var(--accent-teal)' : 'transparent',
+                      color: isActive ? '#FFFFFF' : 'var(--text-secondary)',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title={lang === 'th' ? `สเกลแนวตั้ง ±${scaleVal}V (${(scaleVal / 4).toFixed(2)} V/div)` : `Vertical scale ±${scaleVal}V (${(scaleVal / 4).toFixed(2)} V/div)`}
+                  >
+                    ±{scaleVal}V
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+              {t.chartY}
+            </div>
+          </div>
         </div>
         <div className="chart-container">
           <WaveformCanvas
@@ -1252,6 +1307,7 @@ function App() {
             isSessionActive={isSessionActive}
             startGripMv={startGripMv}
             stopGripMv={stopGripMv}
+            vScale={waveformScale}
             t={t}
           />
         </div>

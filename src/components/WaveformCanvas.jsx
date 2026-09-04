@@ -11,6 +11,7 @@ const WaveformCanvas = forwardRef(({
   isSessionActive,
   startGripMv = 1200,
   stopGripMv = 600,
+  vScale = 4,
   t = {},
 }, ref) => {
   const canvasRef = useRef(null);
@@ -55,13 +56,17 @@ const WaveformCanvas = forwardRef(({
       ctx.clearRect(0, 0, width, height);
 
       // Margins aligned for oscilloscope-style presentation
-      const margin = { top: 20, right: 90, bottom: 25, left: 50 };
+      const margin = { top: 22, right: 90, bottom: 25, left: 52 };
       const plotWidth = width - margin.left - margin.right;
       const plotHeight = height - margin.top - margin.bottom;
 
-      // 8 vertical divisions @ 1.00V / div = -4000 mV to +4000 mV
-      const yMin = -4000;
-      const yMax = 4000;
+      // Vertical divisions dynamically based on vScale:
+      // vScale = 4 -> ±4.00V (1.00 V/div, 8 divisions)
+      // vScale = 2 -> ±2.00V (0.50 V/div, 8 divisions)
+      // vScale = 1 -> ±1.00V (0.25 V/div, 8 divisions)
+      const scale = [1, 2, 4].includes(vScale) ? vScale : 4;
+      const yMin = -scale * 1000;
+      const yMax = scale * 1000;
       const yRange = yMax - yMin;
 
       const getY = (val) => {
@@ -87,8 +92,13 @@ const WaveformCanvas = forwardRef(({
         ctx.stroke();
       }
 
-      // 2. Draw 8 Vertical Voltage Divisions (Horizontal Grid Lines @ 1.00V/div)
-      const vTicks = [-4000, -3000, -2000, -1000, 0, 1000, 2000, 3000, 4000];
+      // 2. Draw 8 Vertical Voltage Divisions (Horizontal Grid Lines @ stepMv)
+      const stepMv = (scale * 1000) / 4;
+      const vTicks = [];
+      for (let i = -4; i <= 4; i++) {
+        vTicks.push(i * stepMv);
+      }
+
       ctx.font = '11px Inter, system-ui, sans-serif';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
@@ -113,38 +123,60 @@ const WaveformCanvas = forwardRef(({
         // Voltage label text on left
         ctx.setLineDash([]);
         ctx.fillStyle = tickVal === 0 ? '#64748B' : '#94A3B8';
-        ctx.fillText(`${(tickVal / 1000).toFixed(0)}V`, margin.left - 8, y);
+        const voltVal = tickVal / 1000;
+        let tickText;
+        if (scale === 4) {
+          tickText = `${voltVal.toFixed(0)}V`;
+        } else if (scale === 2) {
+          tickText = Number.isInteger(voltVal) ? `${voltVal.toFixed(0)}V` : `${voltVal.toFixed(1)}V`;
+        } else {
+          tickText = Number.isInteger(voltVal) ? `${voltVal.toFixed(0)}V` : `${voltVal.toFixed(2)}V`;
+        }
+        ctx.fillText(tickText, margin.left - 8, y);
       });
 
+      // Oscilloscope Division Scale Badge on top right of the plot
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '10px Inter, system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      const divLabel = `${(scale / 4).toFixed(2)} V/div · 200 ms/div`;
+      ctx.fillText(divLabel, margin.left + plotWidth, margin.top - 6);
+
       // 3. Threshold Reference Lines (เริ่มทำ / หยุดทำ)
-      const yStart = getY(startGripMv);
-      ctx.beginPath();
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = '#00BCA3';
-      ctx.lineWidth = 1.2;
-      ctx.moveTo(margin.left, yStart);
-      ctx.lineTo(margin.left + plotWidth, yStart);
-      ctx.stroke();
+      if (startGripMv >= yMin && startGripMv <= yMax) {
+        const yStart = getY(startGripMv);
+        ctx.beginPath();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = '#00BCA3';
+        ctx.lineWidth = 1.2;
+        ctx.moveTo(margin.left, yStart);
+        ctx.lineTo(margin.left + plotWidth, yStart);
+        ctx.stroke();
 
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#00BCA3';
-      ctx.textAlign = 'left';
-      ctx.font = '11px Inter, system-ui, sans-serif';
-      const startLabel = t.startAt ? `${t.startAt} ${(startGripMv / 1000).toFixed(2)}V` : `เริ่มทำ ${(startGripMv / 1000).toFixed(2)}V`;
-      ctx.fillText(startLabel, margin.left + plotWidth + 6, yStart + 8);
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#00BCA3';
+        ctx.textAlign = 'left';
+        ctx.font = '11px Inter, system-ui, sans-serif';
+        const startLabel = t.startAt ? `${t.startAt} ${(startGripMv / 1000).toFixed(2)}V` : `เริ่มทำ ${(startGripMv / 1000).toFixed(2)}V`;
+        ctx.fillText(startLabel, margin.left + plotWidth + 6, yStart + 4);
+      }
 
-      const yStop = getY(stopGripMv);
-      ctx.beginPath();
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = '#F97316';
-      ctx.lineWidth = 1.2;
-      ctx.moveTo(margin.left, yStop);
-      ctx.lineTo(margin.left + plotWidth, yStop);
-      ctx.stroke();
+      if (stopGripMv >= yMin && stopGripMv <= yMax) {
+        const yStop = getY(stopGripMv);
+        ctx.beginPath();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = '#F97316';
+        ctx.lineWidth = 1.2;
+        ctx.moveTo(margin.left, yStop);
+        ctx.lineTo(margin.left + plotWidth, yStop);
+        ctx.stroke();
 
-      ctx.fillStyle = '#F97316';
-      const stopLabel = t.stopAt ? `${t.stopAt} ${(stopGripMv / 1000).toFixed(2)}V` : `หยุดทำ ${(stopGripMv / 1000).toFixed(2)}V`;
-      ctx.fillText(stopLabel, margin.left + plotWidth + 6, yStop - 6);
+        ctx.fillStyle = '#F97316';
+        ctx.textAlign = 'left';
+        ctx.font = '11px Inter, system-ui, sans-serif';
+        const stopLabel = t.stopAt ? `${t.stopAt} ${(stopGripMv / 1000).toFixed(2)}V` : `หยุดทำ ${(stopGripMv / 1000).toFixed(2)}V`;
+        ctx.fillText(stopLabel, margin.left + plotWidth + 6, yStop - 4);
+      }
 
       // 4. Draw Oscilloscope Waveform Trace (Keysight Yellow #FACC15)
       const samples = samplesRef.current;
@@ -216,7 +248,7 @@ const WaveformCanvas = forwardRef(({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [isSessionActive, startGripMv, stopGripMv, t]);
+  }, [isSessionActive, startGripMv, stopGripMv, vScale, t]);
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
