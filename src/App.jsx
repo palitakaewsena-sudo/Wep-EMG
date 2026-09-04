@@ -24,7 +24,7 @@ const i18n = {
     connectBtn: "เชื่อมต่อ Bluetooth",
     disconnectBtn: "ยกเลิกการเชื่อมต่อ",
     emgVal: "Vaverage",
-    emgSub: "mV Vaverage · Raw ADC: 0",
+    emgSub: "V Vaverage · Raw ADC: 0",
     vmax: "Vmax (สูงสุด)",
     vmin: "Vmin (ต่ำสุด)",
     freq: "ความถี่ (Hz)",
@@ -87,7 +87,7 @@ const i18n = {
     colSetTime: "ตั้งเวลา",
     colRealTime: "เวลาจริง",
     colGrip: "กำมือ (ครั้ง)",
-    colEMG: "Vaverage (mV)",
+    colEMG: "Vaverage (V)",
     colAvg: "เฉลี่ย (วิ)",
     
     // Auth
@@ -147,7 +147,7 @@ const i18n = {
     connectBtn: "Connect Bluetooth",
     disconnectBtn: "Disconnect",
     emgVal: "Vaverage",
-    emgSub: "mV Vaverage · Raw ADC: 0",
+    emgSub: "V Vaverage · Raw ADC: 0",
     vmax: "Vmax (Max)",
     vmin: "Vmin (Min)",
     freq: "Freq (Hz)",
@@ -210,7 +210,7 @@ const i18n = {
     colSetTime: "Set Time",
     colRealTime: "Actual Time",
     colGrip: "Grips",
-    colEMG: "Vaverage (mV)",
+    colEMG: "Vaverage (V)",
     colAvg: "Avg (s)",
     
     // Auth
@@ -639,7 +639,7 @@ function App() {
       setTime: targetSetTime === 0 ? (lang === 'th' ? 'ไม่จำกัด' : 'Unlimited') : formatTime(targetSetTime),
       realTime: formatTime(actualTime),
       grips: sessionRef.current.gripCount,
-      emg: currentVavg.toFixed(1),
+      emg: currentVavg.toFixed(2),
       avg: sessionRef.current.gripCount > 0 ? (actualTime / sessionRef.current.gripCount).toFixed(1) : 0
     };
     
@@ -779,8 +779,9 @@ function App() {
           const rawVal = parseFloat(line); // Assuming ADC 12-bit
           lastRaw = rawVal;
           
-          // 1. แปลงค่า ADC เป็นแรงดันไฟฟ้าจริง (0 - 3300 mV) ตรงจากขา ADC ของ ESP32
+          // 1. แปลงค่า ADC เป็นแรงดันไฟฟ้าจริง (0 - 3300 mV / 0 - 3.3V) ตรงจากขา ADC ของ ESP32
           const rawMv = (rawVal / 4095.0) * 3300.0;
+          const rawV = rawMv / 1000.0;
 
           // 2. คำนวณ DC Baseline ศูนย์กลางของสัญญาณ (Low-Pass Filter) เพื่อดึงระดับ DC ออก (AC Coupling)
           if (sessionRef.current.dcBaseline === undefined) {
@@ -811,7 +812,7 @@ function App() {
 
           // เก็บข้อมูล buffer และคำนวณ Vaverage เฉพาะเมื่อกำลังฝึกอยู่เท่านั้น (หลังกดเริ่มฝึก)
           if (sessionRef.current.isActive) {
-            sessionRef.current.peakHoldBuffer.push(plotMv);
+            sessionRef.current.peakHoldBuffer.push(rawV);
             if (sessionRef.current.peakHoldBuffer.length > 1000) {
               sessionRef.current.peakHoldBuffer.shift();
             }
@@ -859,12 +860,12 @@ function App() {
           if (nowUI - sessionRef.current.lastUiUpdate >= 100) {
             sessionRef.current.lastUiUpdate = nowUI;
             
-            const buffermV = sessionRef.current.peakHoldBuffer;
-            const recentSamples = buffermV.slice(-150); // 150 จุดล่าสุด (~0.3 วินาที)
-            const sumAbs = recentSamples.reduce((sum, val) => sum + Math.abs(val), 0);
-            const Vavg = sumAbs / (recentSamples.length || 1);
+            const bufferV = sessionRef.current.peakHoldBuffer;
+            const recentSamples = bufferV.slice(-300); // 300 จุดล่าสุด (~0.6 วินาที)
+            const sumV = recentSamples.reduce((sum, val) => sum + val, 0);
+            const Vavg = sumV / (recentSamples.length || 1);
             
-            // แสดงค่าจริงแบบดิบๆ แท้ๆ 100% ตามสัญญาณกล้ามเนื้อขณะนั้น (ไม่ถ่วง EMA)
+            // แสดงค่าแรงดันจริงแท้ 100% สอดคล้องกับค่า Avg - FS บน Keysight Oscilloscope
             setCurrentVavg(Vavg);
             telemetryRef.current.vavg = Vavg;
             
@@ -1179,7 +1180,7 @@ function App() {
       {/* Metrics Row */}
       <div className="card metric-card col-span-4">
         <div className="metric-header"><Zap size={16} /> {t.emgVal}</div>
-        <div className="metric-value teal">{currentVavg.toFixed(1)}</div>
+        <div className="metric-value teal">{currentVavg > 0 ? `${currentVavg.toFixed(2)} V` : '0.00 V'}</div>
         <div className="metric-sub">{t.emgSub.replace('0', rawAdc.toFixed(0))}</div>
       </div>
       <div className="card metric-card col-span-4">
