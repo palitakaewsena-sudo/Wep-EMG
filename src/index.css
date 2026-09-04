@@ -226,9 +226,22 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 0.875rem;
 }
 
-.btn-select { color: var(--accent-teal); font-weight: 600; }
-.btn-edit { color: var(--text-secondary); }
-.btn-delete { color: var(--accent-red); }
+.btn-select { 
+  color: var(--accent-teal); 
+  font-weight: 600; 
+  transition: all 0.2s ease;
+}
+.btn-select:hover { opacity: 0.85; }
+.btn-edit { 
+  color: var(--text-secondary); 
+  transition: color 0.2s ease;
+}
+.btn-edit:hover { color: var(--accent-teal); }
+.btn-delete { 
+  color: var(--accent-red); 
+  transition: opacity 0.2s ease;
+}
+.btn-delete:hover { opacity: 0.8; }
 
 /* Modal */
 .modal-overlay {

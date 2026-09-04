@@ -124,6 +124,7 @@ const i18n = {
     repoSelected: "✓ เลือกแล้ว (Selected)",
     repoNotSelected: "เลือก (Select)",
     addTesterTitle: "เพิ่มผู้ทดสอบใหม่ (Add Tester)",
+    editTesterTitle: "แก้ไขข้อมูลผู้ทดสอบ (Edit Tester)",
     addTesterName: "ชื่อ-นามสกุล (Name)",
     addTesterAge: "อายุ (Age)",
     addTesterGender: "เพศ (Gender)",
@@ -246,6 +247,7 @@ const i18n = {
     repoSelected: "✓ Selected",
     repoNotSelected: "Select",
     addTesterTitle: "Add Tester",
+    editTesterTitle: "Edit Tester",
     addTesterName: "Name",
     addTesterAge: "Age",
     addTesterGender: "Gender",
@@ -314,6 +316,49 @@ function App() {
     setTestWeight('');
     setTestHeight('');
     setIsAddingTester(false);
+  };
+
+  // Edit Tester Form
+  const [editingTester, setEditingTester] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editAge, setEditAge] = useState('');
+  const [editGender, setEditGender] = useState('ชาย / Male');
+  const [editWeight, setEditWeight] = useState('');
+  const [editHeight, setEditHeight] = useState('');
+  const [editHand, setEditHand] = useState('ขวา / Right');
+
+  const handleOpenEditTester = (tester) => {
+    setEditingTester(tester);
+    setEditName(tester.name || '');
+    setEditAge(tester.age || '');
+    setEditGender(tester.gender || 'ชาย / Male');
+    setEditWeight(tester.weight || '');
+    setEditHeight(tester.height || '');
+    setEditHand(tester.hand || 'ขวา / Right');
+  };
+
+  const handleSaveEditTester = (e) => {
+    e.preventDefault();
+    if (!editingTester || !editName.trim()) return;
+
+    const updatedTesters = testers.map(item => {
+      if (item.id === editingTester.id) {
+        return {
+          ...item,
+          name: editName.trim(),
+          age: editAge,
+          gender: editGender,
+          weight: editWeight,
+          height: editHeight,
+          hand: editHand
+        };
+      }
+      return item;
+    });
+
+    setTesters(updatedTesters);
+    localStorage.setItem('emg_testers', JSON.stringify(updatedTesters));
+    setEditingTester(null);
   };
 
   const handleSelectTester = (id) => {
@@ -853,9 +898,9 @@ function App() {
 
   const [searchQuery, setSearchQuery] = useState('');
   
-  const filteredTesters = testers.filter(t => 
-    t.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    t.id.includes(searchQuery)
+  const filteredTesters = testers.filter(testerItem => 
+    testerItem.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    testerItem.id.includes(searchQuery)
   );
 
   const renderTesterRepository = () => (
@@ -883,43 +928,60 @@ function App() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
         {filteredTesters.length > 0 ? (
-          filteredTesters.map(t => (
+          filteredTesters.map(testerItem => (
             <div 
-              key={t.id} 
+              key={testerItem.id} 
               className="tester-card" 
               style={{ 
-                border: activeTesterId === t.id ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                border: activeTesterId === testerItem.id ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
                 cursor: 'pointer'
               }}
-              onClick={() => handleSelectTester(t.id)}
+              onClick={() => handleSelectTester(testerItem.id)}
             >
               <div className="tester-card-header">
                 <div className="tester-avatar">
-                  {t.name.charAt(0)}
+                  {testerItem.name.charAt(0)}
                 </div>
                 <div className="tester-info">
-                  <h3>{t.name}</h3>
-                  <p>{t.age} {t.unitYears} | {lang === 'th' ? t.gender.split(' / ')[0] : t.gender.split(' / ')[1] || t.gender.split(' / ')[0]} | {lang === 'th' ? 'มือ' + t.hand.split(' / ')[0] : t.hand.split(' / ')[1] || t.hand.split(' / ')[0]}</p>
+                  <h3>{testerItem.name}</h3>
+                  <p>{testerItem.age} {t.unitYears} | {lang === 'th' ? testerItem.gender.split(' / ')[0] : testerItem.gender.split(' / ')[1] || testerItem.gender.split(' / ')[0]} | {lang === 'th' ? 'มือ' + testerItem.hand.split(' / ')[0] : testerItem.hand.split(' / ')[1] || testerItem.hand.split(' / ')[0]}</p>
                 </div>
               </div>
               <div className="tester-actions">
                 <button 
-                  className={`btn-select ${activeTesterId === t.id ? 'active' : ''}`} 
-                  onClick={(e) => { e.stopPropagation(); handleSelectTester(t.id); }}
+                  className={`btn-select ${activeTesterId === testerItem.id ? 'active' : ''}`} 
+                  onClick={(e) => { e.stopPropagation(); handleSelectTester(testerItem.id); }}
                   style={{
-                    backgroundColor: activeTesterId === t.id ? 'var(--accent-teal)' : 'transparent',
-                    color: activeTesterId === t.id ? 'white' : 'var(--text-primary)',
-                    border: activeTesterId === t.id ? 'none' : '1px solid var(--border-color)',
-                    cursor: 'pointer'
+                    backgroundColor: activeTesterId === testerItem.id ? 'var(--accent-teal)' : 'transparent',
+                    color: activeTesterId === testerItem.id ? 'white' : 'var(--text-primary)',
+                    border: activeTesterId === testerItem.id ? 'none' : '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    padding: '0.35rem 0.75rem',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem'
                   }}
                 >
-                  {activeTesterId === t.id ? t.repoSelected : t.repoNotSelected}
+                  {activeTesterId === testerItem.id ? t.repoSelected : t.repoNotSelected}
                 </button>
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <button className="btn-edit" onClick={(e) => { e.stopPropagation(); alert('ฟังก์ชันแก้ไขกำลังอยู่ในระหว่างการพัฒนา'); }}>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                  <button 
+                    className="btn-edit" 
+                    title={t.btnEdit}
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      handleOpenEditTester(testerItem); 
+                    }}
+                  >
                     ✎ {t.btnEdit}
                   </button>
-                  <button className="btn-delete" onClick={(e) => { e.stopPropagation(); handleDeleteTester(t.id); }}>
+                  <button 
+                    className="btn-delete" 
+                    title={t.btnDelete}
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      handleDeleteTester(testerItem.id); 
+                    }}
+                  >
                     🗑 {t.btnDelete}
                   </button>
                 </div>
@@ -935,8 +997,8 @@ function App() {
       </div>
 
       {isAddingTester && (
-        <div className="modal-overlay">
-          <div className="modal-content">
+        <div className="modal-overlay" onClick={() => setIsAddingTester(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{t.addTesterTitle}</h3>
               <button className="modal-close" onClick={() => setIsAddingTester(false)}>✕</button>
@@ -984,6 +1046,103 @@ function App() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' }}>
                 <button type="button" className="btn btn-outline" onClick={() => setIsAddingTester(false)}>{t.addTesterCancel}</button>
                 <button type="submit" className="btn btn-teal">{t.addTesterSave}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingTester && (
+        <div className="modal-overlay" onClick={() => setEditingTester(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{t.editTesterTitle}</h3>
+              <button className="modal-close" onClick={() => setEditingTester(null)}>✕</button>
+            </div>
+            <form onSubmit={handleSaveEditTester}>
+              <div className="form-group">
+                <label>{t.addTesterName}</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  value={editName} 
+                  onChange={e => setEditName(e.target.value)} 
+                  required 
+                />
+              </div>
+              
+              <div className="form-row">
+                <div className="form-group">
+                  <label>{t.addTesterAge}</label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    className="form-control" 
+                    value={editAge} 
+                    onChange={e => setEditAge(e.target.value)} 
+                    required 
+                  />
+                </div>
+                <div className="form-group">
+                  <label>{t.addTesterGender}</label>
+                  <select 
+                    className="form-control" 
+                    value={editGender} 
+                    onChange={e => setEditGender(e.target.value)} 
+                    required
+                  >
+                    <option value="ชาย / Male">{lang === 'th' ? 'ชาย / Male' : 'Male / ชาย'}</option>
+                    <option value="หญิง / Female">{lang === 'th' ? 'หญิง / Female' : 'Female / หญิง'}</option>
+                    <option value="อื่นๆ / Other">{lang === 'th' ? 'อื่นๆ / Other' : 'Other / อื่นๆ'}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>{t.addTesterWeight}</label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    className="form-control" 
+                    value={editWeight} 
+                    onChange={e => setEditWeight(e.target.value)} 
+                    required 
+                  />
+                </div>
+                <div className="form-group">
+                  <label>{t.addTesterHeight}</label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    className="form-control" 
+                    value={editHeight} 
+                    onChange={e => setEditHeight(e.target.value)} 
+                    required 
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>{t.addTesterHand}</label>
+                <select 
+                  className="form-control" 
+                  value={editHand} 
+                  onChange={e => setEditHand(e.target.value)} 
+                  required
+                >
+                  <option value="ขวา / Right">{lang === 'th' ? 'ขวา / Right' : 'Right / ขวา'}</option>
+                  <option value="ซ้าย / Left">{lang === 'th' ? 'ซ้าย / Left' : 'Left / ซ้าย'}</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' }}>
+                <button type="button" className="btn btn-outline" onClick={() => setEditingTester(null)}>
+                  {t.addTesterCancel}
+                </button>
+                <button type="submit" className="btn btn-teal">
+                  {t.addTesterSave}
+                </button>
               </div>
             </form>
           </div>
