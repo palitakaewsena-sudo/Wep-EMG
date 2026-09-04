@@ -6,7 +6,7 @@ import {
 import { 
   Activity, Settings as SettingsIcon, Play, Square, Bluetooth, BluetoothConnected, 
   History, Globe, Zap, Hand, Clock, BarChart2, Target, SlidersHorizontal, RefreshCw,
-  UserPlus, User, Lock, LogOut, Users, Check
+  UserPlus, User, Lock, LogOut, Users, Check, Volume2, VolumeX
 } from 'lucide-react';
 import WaveformCanvas from './components/WaveformCanvas';
 import './index.css';
@@ -46,6 +46,9 @@ const i18n = {
     timeBottom: "Time",
     controlTitle: "ควบคุมการฝึก",
     controlSub: "ตั้งเวลาและเริ่ม/หยุดเซสชัน",
+    soundBiofeedback: "เสียงตอบรับทางชีวภาพ",
+    soundDing: "เสียงติ๊ง",
+    soundMute: "ปิดเสียง",
     calibTitle: "คาลิเบรต threshold",
     calibSub: "วางมือพัก 3 วิ แล้วกด →",
     calibBtn: "Calibrate",
@@ -170,6 +173,9 @@ const i18n = {
     timeBottom: "Time",
     controlTitle: "Session Control",
     controlSub: "Set time and start/stop session",
+    soundBiofeedback: "Audio Biofeedback",
+    soundDing: "Ding Sound",
+    soundMute: "Muted",
     calibTitle: "Calibrate threshold",
     calibSub: "Rest hand for 3s then press →",
     calibBtn: "Calibrate",
@@ -450,6 +456,106 @@ function App() {
     } catch {}
   };
 
+  // Audio Biofeedback ("Ding!" Chime) & Visual Flash State
+  const audioCtxRef = useRef(null);
+  const soundEnabledRef = useRef(true);
+  const [isGripFlash, setIsGripFlash] = useState(false);
+
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try {
+      const saved = localStorage.getItem('emg_sound_enabled');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  const initOrResumeAudio = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return null;
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioCtx();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume();
+      }
+      return audioCtxRef.current;
+    } catch (e) {
+      console.warn("AudioContext init error:", e);
+      return null;
+    }
+  };
+
+  const playDingSound = () => {
+    if (!soundEnabledRef.current) return;
+    try {
+      const ctx = initOrResumeAudio();
+      if (!ctx) return;
+
+      const now = ctx.currentTime;
+
+      // Master output gain envelope for natural bell chime
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(0.0001, now);
+      masterGain.gain.linearRampToValueAtTime(0.35, now + 0.003); // Quick crisp strike
+      masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.65); // Silky smooth decay
+      masterGain.connect(ctx.destination);
+
+      // 1. Primary chime tone (High C, C6 = 1046.5 Hz)
+      const osc1 = ctx.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(1046.5, now);
+      osc1.connect(masterGain);
+
+      // 2. High harmonic shimmer (C7 = 2093 Hz)
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(2093, now);
+      const gain2 = ctx.createGain();
+      gain2.gain.setValueAtTime(0.28, now);
+      gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+      osc2.connect(gain2);
+      gain2.connect(masterGain);
+
+      // 3. Crystal bell sparkle (G7 = 3136 Hz)
+      const osc3 = ctx.createOscillator();
+      osc3.type = 'sine';
+      osc3.frequency.setValueAtTime(3135.96, now);
+      const gain3 = ctx.createGain();
+      gain3.gain.setValueAtTime(0.12, now);
+      gain3.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+      osc3.connect(gain3);
+      gain3.connect(masterGain);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc3.start(now);
+
+      osc1.stop(now + 0.7);
+      osc2.stop(now + 0.7);
+      osc3.stop(now + 0.7);
+    } catch (err) {
+      console.warn("Could not play ding sound:", err);
+    }
+  };
+
+  const toggleSound = () => {
+    const nextState = !soundEnabled;
+    setSoundEnabled(nextState);
+    try {
+      localStorage.setItem('emg_sound_enabled', String(nextState));
+    } catch {}
+    soundEnabledRef.current = nextState;
+    if (nextState) {
+      setTimeout(() => playDingSound(), 50);
+    }
+  };
+
   // Refs for real-time processing
   const debugTextRef = useRef(null);
   const bufferRef = useRef("");
@@ -597,6 +703,7 @@ function App() {
 
   const handleStartSession = () => {
     if (!isConnected) return;
+    initOrResumeAudio();
     setGripCount(0);
     sessionRef.current.gripCount = 0;
     sessionRef.current.isGripping = false;
@@ -879,6 +986,9 @@ function App() {
                 sessionRef.current.releaseHoldStartTime = 0;
                 sessionRef.current.gripCount++;
                 setGripCount(prev => prev + 1);
+                playDingSound();
+                setIsGripFlash(true);
+                setTimeout(() => setIsGripFlash(false), 350);
               }
             } else {
               // อยู่ในสถานะกำลังกำมือ:
@@ -1243,7 +1353,7 @@ function App() {
             : t.emgSub.replace('0', '0')}
         </div>
       </div>
-      <div className="card metric-card col-span-4">
+      <div className={`card metric-card col-span-4 ${isGripFlash ? 'grip-pulse' : ''}`} style={{ transition: 'all 0.2s ease' }}>
         <div className="metric-header"><Hand size={16} /> {t.gripVal}</div>
         <div className="metric-value teal">{gripCount}</div>
         <div className="metric-sub">{t.gripSub}</div>
@@ -1315,11 +1425,35 @@ function App() {
 
       {/* Controls */}
       <div className="card control-card col-span-4" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', justifyContent: 'flex-start' }}>
-        <div>
-          <div className="control-header" style={{ marginBottom: '0.25rem' }}>
-            <Clock size={18} /> {t.controlTitle}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+          <div>
+            <div className="control-header" style={{ marginBottom: '0.25rem' }}>
+              <Clock size={18} /> {t.controlTitle}
+            </div>
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{t.controlSub}</div>
           </div>
-          <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{t.controlSub}</div>
+          <button
+            type="button"
+            onClick={toggleSound}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              padding: '4px 8px',
+              borderRadius: '8px',
+              border: soundEnabled ? '1px solid var(--accent-teal)' : '1px solid var(--border-light)',
+              background: soundEnabled ? 'rgba(0,188,163,0.08)' : 'var(--bg-main)',
+              color: soundEnabled ? 'var(--accent-teal)' : 'var(--text-secondary)',
+              cursor: 'pointer',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              transition: 'all 0.15s ease'
+            }}
+            title={soundEnabled ? (lang === 'th' ? 'คลิกเพื่อปิดเสียงตอบรับ (ติ๊ง!)' : 'Click to mute audio biofeedback') : (lang === 'th' ? 'คลิกเพื่อเปิดเสียงตอบรับ (ติ๊ง!)' : 'Click to enable audio biofeedback')}
+          >
+            {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            <span>{soundEnabled ? t.soundDing : t.soundMute}</span>
+          </button>
         </div>
         
         <div className="timer-select">

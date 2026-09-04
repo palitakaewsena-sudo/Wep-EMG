@@ -609,3 +609,15 @@ h1, h2, h3, h4, h5, h6 {
 @media (max-width: 480px) {
   .col-span-3 { grid-column: span 12; }
 }
+
+/* Audio & Visual Biofeedback Pulse */
+.grip-pulse {
+  animation: gripPulse 0.35s ease-out;
+  border-color: var(--accent-teal) !important;
+}
+
+@keyframes gripPulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 188, 163, 0.4); }
+  50% { transform: scale(1.02); box-shadow: 0 0 16px 2px rgba(0, 188, 163, 0.25); }
+  100% { transform: scale(1); box-shadow: none; }
+}
