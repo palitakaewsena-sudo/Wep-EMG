@@ -25,7 +25,7 @@ const i18n = {
     connectBtn: "เชื่อมต่อ Bluetooth",
     disconnectBtn: "ยกเลิกการเชื่อมต่อ",
     emgVal: "Vaverage",
-    emgSub: "V Vaverage · Raw ADC: 0",
+    emgSub: "EMG · Raw ADC: 0",
     vmax: "Vmax (สูงสุด)",
     vmin: "Vmin (ต่ำสุด)",
     freq: "ความถี่ (Hz)",
@@ -148,7 +148,7 @@ const i18n = {
     connectBtn: "Connect Bluetooth",
     disconnectBtn: "Disconnect",
     emgVal: "Vaverage",
-    emgSub: "V Vaverage · Raw ADC: 0",
+    emgSub: "EMG · Raw ADC: 0",
     vmax: "Vmax (Max)",
     vmin: "Vmin (Min)",
     freq: "Freq (Hz)",
@@ -827,13 +827,14 @@ function App() {
 
           sessionRef.current.sampleCount = (sessionRef.current.sampleCount || 0) + 1;
 
-          // เก็บข้อมูล buffer และคำนวณ Vaverage เฉพาะเมื่อกำลังฝึกอยู่เท่านั้น (หลังกดเริ่มฝึก)
-          if (sessionRef.current.isActive) {
-            sessionRef.current.peakHoldBuffer.push(rawV);
-            if (sessionRef.current.peakHoldBuffer.length > 1000) {
-              sessionRef.current.peakHoldBuffer.shift();
-            }
+          // เก็บข้อมูล buffer สำหรับคำนวณ Vaverage สัญญาณกล้ามเนื้อจริง (EMG Amplitude)
+          const emgVolt = absMv / 1000.0;
+          sessionRef.current.peakHoldBuffer.push(emgVolt);
+          if (sessionRef.current.peakHoldBuffer.length > 500) {
+            sessionRef.current.peakHoldBuffer.shift();
+          }
 
+          if (sessionRef.current.isActive) {
             const now = Date.now();
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
 
@@ -885,24 +886,22 @@ function App() {
         }
       }
 
-      // 3. อัปเดตตัวเลขพารามิเตอร์ Vaverage เฉพาะเมื่อกำลังฝึกอยู่เท่านั้น (หลังกดเริ่มฝึก)
-      if (sessionRef.current.isActive) {
-        if (sessionRef.current.peakHoldBuffer.length > 0) {
-          const nowUI = Date.now();
-          if (nowUI - sessionRef.current.lastUiUpdate >= 100) {
-            sessionRef.current.lastUiUpdate = nowUI;
-            
-            const bufferV = sessionRef.current.peakHoldBuffer;
-            const recentSamples = bufferV.slice(-300); // 300 จุดล่าสุด (~0.6 วินาที)
-            const sumV = recentSamples.reduce((sum, val) => sum + val, 0);
-            const Vavg = sumV / (recentSamples.length || 1);
-            
-            // แสดงค่าแรงดันจริงแท้ 100% สอดคล้องกับค่า Avg - FS บน Keysight Oscilloscope
-            setCurrentVavg(Vavg);
-            telemetryRef.current.vavg = Vavg;
-            
-            if (sessionRef.current.dcBaseline) setDcOffsetState(sessionRef.current.dcBaseline);
-          }
+      // 3. อัปเดตตัวเลขพารามิเตอร์ Vaverage แบบ Real-time ตามแรงบีบจริงของกล้ามเนื้อ
+      if (sessionRef.current.peakHoldBuffer.length > 0) {
+        const nowUI = Date.now();
+        if (nowUI - sessionRef.current.lastUiUpdate >= 100) {
+          sessionRef.current.lastUiUpdate = nowUI;
+          
+          const bufferV = sessionRef.current.peakHoldBuffer;
+          const recentSamples = bufferV.slice(-150); // 150 จุดล่าสุด (~0.3 วินาที)
+          const sumV = recentSamples.reduce((sum, val) => sum + val, 0);
+          const Vavg = sumV / (recentSamples.length || 1);
+          
+          // แสดงค่าแรงดันสัญญาณกล้ามเนื้อจริง ตอบสนองต่อการออกแรงกำมือแบบ Real-time
+          setCurrentVavg(Vavg);
+          telemetryRef.current.vavg = Vavg;
+          
+          if (sessionRef.current.dcBaseline) setDcOffsetState(sessionRef.current.dcBaseline);
         }
       }
 
@@ -1213,7 +1212,11 @@ function App() {
       <div className="card metric-card col-span-4">
         <div className="metric-header"><Zap size={16} /> {t.emgVal}</div>
         <div className="metric-value teal">{currentVavg > 0 ? `${currentVavg.toFixed(2)} V` : '0.00 V'}</div>
-        <div className="metric-sub">{t.emgSub.replace('0', rawAdc.toFixed(0))}</div>
+        <div className="metric-sub">
+          {isConnected && rawAdc > 0 
+            ? `EMG · DC: ${((rawAdc / 4095.0) * 3.3).toFixed(2)}V · Raw ADC: ${rawAdc.toFixed(0)}` 
+            : t.emgSub.replace('0', '0')}
+        </div>
       </div>
       <div className="card metric-card col-span-4">
         <div className="metric-header"><Hand size={16} /> {t.gripVal}</div>
