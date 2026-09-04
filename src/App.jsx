@@ -429,7 +429,6 @@ function App() {
   const [currentVmin, setCurrentVmin] = useState(0);
   const [currentFreq, setCurrentFreq] = useState(0);
   const [rawAdc, setRawAdc] = useState(0);
-  const [dcOffsetState, setDcOffsetState] = useState(1650);
 
   // Settings State
   const [sessionTimePreset, setSessionTimePreset] = useState(5);
@@ -725,6 +724,10 @@ function App() {
     waveformRef.current?.reset();
     setCurrentVpp(0);
     setCurrentVavg(0);
+    sessionRef.current.vBuffer = null;
+    sessionRef.current.vSum = 0;
+    sessionRef.current.vIdx = 0;
+    sessionRef.current.vCount = 0;
   };
 
   const handleStopSession = () => {
@@ -733,6 +736,10 @@ function App() {
     waveformRef.current?.reset();
     setCurrentVpp(0);
     setCurrentVavg(0);
+    sessionRef.current.vBuffer = null;
+    sessionRef.current.vSum = 0;
+    sessionRef.current.vIdx = 0;
+    sessionRef.current.vCount = 0;
     sessionRef.current.peakHoldBuffer = [];
   };
 
@@ -744,6 +751,10 @@ function App() {
     waveformRef.current?.reset();
     setCurrentVpp(0);
     setCurrentVavg(0);
+    sessionRef.current.vBuffer = null;
+    sessionRef.current.vSum = 0;
+    sessionRef.current.vIdx = 0;
+    sessionRef.current.vCount = 0;
     sessionRef.current.peakHoldBuffer = [];
   };
 
@@ -898,9 +909,9 @@ function App() {
         bufferRef.current = "";
       }
 
-      // ป้องกันคิวตกค้างสะสม: หากมีข้อมูลค้างเกิน 30 บรรทัด ให้ตัดทิ้งข้อมูลเก่าและหยิบเฉพาะ 15 ค่าสดล่าสุดทันที
-      if (lines.length > 30) {
-        lines = lines.slice(-15);
+      // ป้องกันคิวตกค้างสะสม: หากมีข้อมูลค้างเกิน 200 บรรทัด (กรณีเบราว์เซอร์สลับแท็บ) ให้หยิบเฉพาะ 100 ค่าสดล่าสุด
+      if (lines.length > 200) {
+        lines = lines.slice(-100);
       }
       
       let newPoints = [];
@@ -958,12 +969,20 @@ function App() {
           sessionRef.current.sampleCount = (sessionRef.current.sampleCount || 0) + 1;
 
           // เก็บข้อมูล buffer และคำนวณ Vaverage เฉพาะเมื่อกำลังฝึกอยู่เท่านั้น (หลังกดเริ่มฝึก)
+          // ใช้ Ring Buffer แบบ Float32Array Zero-allocation ไม่ใช้ .shift()
           if (sessionRef.current.isActive) {
             const emgVolt = absMv / 1000.0;
-            sessionRef.current.peakHoldBuffer.push(emgVolt);
-            if (sessionRef.current.peakHoldBuffer.length > 500) {
-              sessionRef.current.peakHoldBuffer.shift();
+            if (!sessionRef.current.vBuffer) {
+              sessionRef.current.vBuffer = new Float32Array(150);
+              sessionRef.current.vSum = 0;
+              sessionRef.current.vIdx = 0;
+              sessionRef.current.vCount = 0;
             }
+            const oldV = sessionRef.current.vBuffer[sessionRef.current.vIdx];
+            sessionRef.current.vSum += emgVolt - oldV;
+            sessionRef.current.vBuffer[sessionRef.current.vIdx] = emgVolt;
+            sessionRef.current.vIdx = (sessionRef.current.vIdx + 1) % 150;
+            if (sessionRef.current.vCount < 150) sessionRef.current.vCount++;
 
             const now = Date.now();
             const elapsedSeconds = (now - sessionRef.current.startTime) / 1000;
@@ -1020,21 +1039,18 @@ function App() {
       }
 
       // 3. อัปเดตตัวเลขพารามิเตอร์ Vaverage เฉพาะเมื่อกำลังฝึกอยู่เท่านั้น (หลังกดเริ่มฝึก)
-      if (sessionRef.current.isActive && sessionRef.current.peakHoldBuffer.length > 0) {
+      if (sessionRef.current.isActive && sessionRef.current.vCount > 0) {
         const nowUI = Date.now();
         if (nowUI - sessionRef.current.lastUiUpdate >= 100) {
           sessionRef.current.lastUiUpdate = nowUI;
           
-          const bufferV = sessionRef.current.peakHoldBuffer;
-          const recentSamples = bufferV.slice(-150); // 150 จุดล่าสุด (~0.3 วินาที)
-          const sumV = recentSamples.reduce((sum, val) => sum + val, 0);
-          const Vavg = sumV / (recentSamples.length || 1);
+          const Vavg = sessionRef.current.vSum / sessionRef.current.vCount;
           
           // แสดงค่าแรงดันสัญญาณกล้ามเนื้อจริง ตอบสนองต่อการออกแรงกำมือแบบ Real-time
-          setCurrentVavg(Vavg);
+          if (Math.abs(Vavg - currentVavg) >= 0.01) {
+            setCurrentVavg(Vavg);
+          }
           telemetryRef.current.vavg = Vavg;
-          
-          if (sessionRef.current.dcBaseline) setDcOffsetState(sessionRef.current.dcBaseline);
         }
       }
 

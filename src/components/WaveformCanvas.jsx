@@ -17,19 +17,29 @@ const WaveformCanvas = forwardRef(({
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
-  // 1,000 points covers exactly 2.0 seconds at 500 Hz (pure 1:1 raw sample stream)
+  // 1,000 points covers exactly 2.0 seconds at 500 Hz
+  // ใช้ Float32Array แบบ Circular Ring Buffer: ป้องกัน Memory Allocation & Garbage Collection 100%
   const maxPoints = 1000;
-  const samplesRef = useRef([]);
+  const mvBufferRef = useRef(new Float32Array(maxPoints));
+  const countRef = useRef(0);
+  const headRef = useRef(0);
+  const lastTimeRef = useRef(0);
 
   useImperativeHandle(ref, () => ({
     pushSample: (plotMv, timeSec) => {
-      samplesRef.current.push({ mv: plotMv, time: timeSec });
-      if (samplesRef.current.length > maxPoints) {
-        samplesRef.current.shift();
+      const idx = headRef.current;
+      mvBufferRef.current[idx] = plotMv;
+      headRef.current = (idx + 1) % maxPoints;
+      if (countRef.current < maxPoints) {
+        countRef.current++;
       }
+      lastTimeRef.current = timeSec;
     },
     reset: () => {
-      samplesRef.current = [];
+      mvBufferRef.current.fill(0);
+      countRef.current = 0;
+      headRef.current = 0;
+      lastTimeRef.current = 0;
     }
   }));
 
@@ -179,8 +189,11 @@ const WaveformCanvas = forwardRef(({
       }
 
       // 4. Draw Oscilloscope Waveform Trace (Keysight Yellow #FACC15)
-      const samples = samplesRef.current;
-      if (isSessionActive && samples.length > 1) {
+      const count = countRef.current;
+      const buffer = mvBufferRef.current;
+      const head = headRef.current;
+
+      if (isSessionActive && count > 1) {
         ctx.save();
         ctx.beginPath();
         ctx.rect(margin.left, margin.top, plotWidth, plotHeight);
@@ -193,9 +206,13 @@ const WaveformCanvas = forwardRef(({
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
 
-        for (let i = 0; i < samples.length; i++) {
+        // วาดคลื่นจาก Circular Buffer โดยเรียงจากจุดเก่าสุดไปจุดใหม่สุด (Zero allocation)
+        const startIdx = count < maxPoints ? 0 : head;
+        const total = count;
+        for (let i = 0; i < total; i++) {
+          const bufIdx = (startIdx + i) % maxPoints;
           const x = margin.left + (i / (maxPoints - 1)) * plotWidth;
-          const y = getY(samples[i].mv);
+          const y = getY(buffer[bufIdx]);
           if (i === 0) {
             ctx.moveTo(x, y);
           } else {
@@ -211,7 +228,7 @@ const WaveformCanvas = forwardRef(({
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
 
-        const lastTime = samples[samples.length - 1].time || 0;
+        const lastTime = lastTimeRef.current || 0;
         const startT = Math.max(0, lastTime - 2.0);
         for (let div = 0; div <= 10; div += 2) {
           const x = margin.left + (div / 10) * plotWidth;
@@ -264,4 +281,4 @@ const WaveformCanvas = forwardRef(({
   );
 });
 
-export default WaveformCanvas;
+export default React.memo(WaveformCanvas);
