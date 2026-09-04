@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  BarChart, Bar, ResponsiveContainer, XAxis, YAxis, CartesianGrid 
+  BarChart, Bar, ResponsiveContainer, XAxis, YAxis, CartesianGrid,
+  Tooltip, LineChart, Line 
 } from 'recharts';
 import { 
   Activity, Settings as SettingsIcon, Play, Square, Bluetooth, BluetoothConnected, 
