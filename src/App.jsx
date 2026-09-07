@@ -970,8 +970,9 @@ function App() {
 
           // เก็บข้อมูล buffer และคำนวณ Vaverage เฉพาะเมื่อกำลังฝึกอยู่เท่านั้น (หลังกดเริ่มฝึก)
           // ใช้ Ring Buffer แบบ Float32Array Zero-allocation ไม่ใช้ .shift()
+          // คำนวณจากแรงดันจริงที่วัดได้ rawV เพื่อให้ตรงกับค่า Avg - FS บนเครื่องออสสิโลสโคปแบบ Real-time โดยไม่ฟิกค่า
           if (sessionRef.current.isActive) {
-            const emgVolt = absMv / 1000.0;
+            const emgVolt = rawV;
             if (!sessionRef.current.vBuffer) {
               sessionRef.current.vBuffer = new Float32Array(150);
               sessionRef.current.vSum = 0;
