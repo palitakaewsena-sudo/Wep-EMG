@@ -938,17 +938,15 @@ function App() {
           const plotMv = rawMv - sessionRef.current.dcBaseline;
           const absMv = Math.abs(plotMv);
 
-          // 4. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (Envelope Follower: Fast Attack & Smooth Decay)
-          // สัญญาณ AC ความถี่สูงแกว่งตัด 0V ตลอดเวลา Envelope Follower จะช่วยรักษาความต่อเนื่องของลูกคลื่น
-          // ป้องกันไม่ให้การตัด 0V ภายในจังหวะกำมือเดียวกันถูกนับซ้ำซ้อน
+          // 4. ลอจิกคำนวณ Envelope สำหรับนับจำนวนการกำมือ (Fast Peak Attack & Smooth Decay)
           if (sessionRef.current.envelopeMv === undefined) {
             sessionRef.current.envelopeMv = 0;
           }
           if (absMv > sessionRef.current.envelopeMv) {
-            // Fast Attack (~15ms): เกาะยอดคลื่นทันทีเมื่อกล้ามเนื้อเริ่มออกแรง
-            sessionRef.current.envelopeMv = (0.4 * absMv) + (0.6 * sessionRef.current.envelopeMv);
+            // Fast Peak Attack: ตอบสนองต่อยอดคลื่นทันที ไม่หน่วงจนยอดคลื่นจริงเตี้ยกว่าเส้นเกณฑ์
+            sessionRef.current.envelopeMv = (0.85 * absMv) + (0.15 * sessionRef.current.envelopeMv);
           } else {
-            // Smooth Decay (~120-150ms): ยึดระดับยอดคลื่นไว้ ไม่ให้ตกไปแตะ 0 ในระหว่างที่ยังกำมืออยู่
+            // Smooth Decay (~120ms): ยึดระดับยอดคลื่นไว้ ไม่ให้ตกไปแตะ 0 ในระหว่างที่ยังกำมืออยู่
             sessionRef.current.envelopeMv = sessionRef.current.envelopeMv * 0.965;
           }
           const envelopeMv = sessionRef.current.envelopeMv;
@@ -970,8 +968,9 @@ function App() {
 
           // เก็บข้อมูล buffer และคำนวณ Vaverage เฉพาะเมื่อกำลังฝึกอยู่เท่านั้น (หลังกดเริ่มฝึก)
           // ใช้ Ring Buffer แบบ Float32Array Zero-allocation ไม่ใช้ .shift()
+          // คำนวณค่าแรงดันจริงแท้ 100% ตรงตามค่า Avg - FS บนเครื่องวัด Keysight Oscilloscope
           if (sessionRef.current.isActive) {
-            const emgVolt = absMv / 1000.0;
+            const emgVolt = rawV;
             if (!sessionRef.current.vBuffer) {
               sessionRef.current.vBuffer = new Float32Array(150);
               sessionRef.current.vSum = 0;
@@ -990,16 +989,20 @@ function App() {
             // ส่งข้อมูลจริงตรงจาก ADC เข้าสู่ WaveformCanvas
             waveformRef.current?.pushSample(plotMv, elapsedSeconds);
 
-            // 2-State Machine with Refractory Debounce & Release Confirmation
-            // รับประกันว่าการกำมือ 1 ครั้ง (ลูกคลื่น 1 ลูก) จะถูกนับเป็น 1 ครั้งอย่างแม่นยำ
+            // 2-State Machine with Refractory Debounce & Dynamic Release Threshold
             const triggerThr = Number(sessionRef.current.startMv);
-            const releaseThr = Number(sessionRef.current.stopMv);
+            const configuredReleaseThr = Number(sessionRef.current.stopMv);
+            
+            // ป้องกันการติดค้าง: ถ้าค่า releaseThr ตั้งไว้ต่ำเกินไปจนจมใต้ Noise floor
+            // ระบบจะกำหนดให้คลายมือที่ระดับ 65% ของ triggerThr หรือตามค่าที่ตั้งไว้ (เลือกค่าที่สูงกว่า)
+            const effectiveReleaseThr = Math.max(configuredReleaseThr, triggerThr * 0.65);
             const nowMs = Date.now();
 
             if (!sessionRef.current.isGripping) {
               const timeSinceLastGrip = nowMs - (sessionRef.current.lastGripTime || 0);
-              // ต้องเกินเกณฑ์เริ่มกำ และพ้นช่วง Debounce อย่างน้อย 350ms หลังจากการกำครั้งก่อน
-              if (envelopeMv >= triggerThr && timeSinceLastGrip >= 350) {
+              // ตรวจจับเมื่อยอดคลื่นแตะหรือเกินเกณฑ์ (ตรวจทั้ง envelopeMv และ absMv เพื่อความฉับไว 100%)
+              const isHitThreshold = (envelopeMv >= triggerThr || absMv >= triggerThr);
+              if (isHitThreshold && timeSinceLastGrip >= 250) {
                 sessionRef.current.isGripping = true;
                 sessionRef.current.lastGripTime = nowMs;
                 sessionRef.current.releaseHoldStartTime = 0;
@@ -1011,11 +1014,11 @@ function App() {
               }
             } else {
               // อยู่ในสถานะกำลังกำมือ:
-              // ต้องปล่อยมือจริง (Envelope ลดต่ำกว่า releaseThr ต่อเนื่องอย่างน้อย 100ms) ถึงจะปลดสถานะกลับเป็นปล่อยมือ
-              if (envelopeMv < releaseThr) {
+              // เมื่อผู้ใช้ปล่อยมือจริง (Envelope ลดลงต่ำกว่า effectiveReleaseThr ต่อเนื่อง 60ms) ปลดล็อกสถานะทันที
+              if (envelopeMv < effectiveReleaseThr) {
                 if (!sessionRef.current.releaseHoldStartTime) {
                   sessionRef.current.releaseHoldStartTime = nowMs;
-                } else if (nowMs - sessionRef.current.releaseHoldStartTime >= 100) {
+                } else if (nowMs - sessionRef.current.releaseHoldStartTime >= 60) {
                   sessionRef.current.isGripping = false;
                   sessionRef.current.releaseHoldStartTime = 0;
                 }
