@@ -1522,38 +1522,6 @@ function App() {
       
       <div className="settings-grid">
         <div className="card setting-card">
-          <div className="setting-icon"><Target size={20} /></div>
-          <div style={{ flex: 1 }}>
-            <h3 style={{ fontSize: '1rem' }}>{t.setAdaptTitle}</h3>
-            <p className="subtitle">{t.setAdaptSub}</p>
-            
-            <div style={{ background: 'var(--bg-main)', padding: '1rem', borderRadius: '8px', marginTop: '1rem', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.875rem', fontWeight: 500 }}>{t.setAdaptNotCalib}</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.setAdaptNotCalibSub}</div>
-            </div>
-
-            <div className="slider-group">
-              <div className="slider-col">
-                <div className="slider-label teal">
-                  <span>{t.setTrigMult}</span>
-                  <span style={{ background: 'white', padding: '2px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>{triggerMult.toFixed(2)}</span>
-                </div>
-                <input type="range" className="range-slider" min="1.0" max="2.0" step="0.01" value={triggerMult} onChange={e => setTriggerMult(parseFloat(e.target.value))} />
-                <div className="slider-sub">{t.setTrigDesc}</div>
-              </div>
-              <div className="slider-col">
-                <div className="slider-label orange">
-                  <span>{t.setRelMult}</span>
-                  <span style={{ background: 'white', padding: '2px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>{releaseMult.toFixed(2)}</span>
-                </div>
-                <input type="range" className="range-slider orange" min="1.0" max="2.0" step="0.01" value={releaseMult} onChange={e => setReleaseMult(parseFloat(e.target.value))} />
-                <div className="slider-sub">{t.setRelDesc}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="card setting-card">
           <div className="setting-icon"><SlidersHorizontal size={20} /></div>
           <div style={{ flex: 1 }}>
             <h3 style={{ fontSize: '1rem' }}>{t.setGripTitle}</h3>
